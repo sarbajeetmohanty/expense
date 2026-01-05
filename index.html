@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"> 
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
@@ -33,7 +33,6 @@
         .loader { width: 20px; height: 20px; border: 2px solid #fff; border-bottom-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         
-        /* Custom Inputs */
         .input-field { width: 100%; padding: 1rem; border-radius: 1rem; background-color: #f8fafc; outline: none; border: 1px solid transparent; transition: all 0.2s; }
         .dark .input-field { background-color: #1e293b; color: white; }
         .input-field:focus { box-shadow: 0 0 0 2px #6366f1; background-color: white; }
@@ -59,18 +58,16 @@
 
     <script type="text/babel">
         // ==========================================
-        // 🔴 CONFIRM YOUR BACKEND URL 🔴
+        // 🔴 PASTE YOUR BACKEND URL HERE 🔴
         // ==========================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbwVS1jLT73d050sKgSXo63a0SkQwNLi5bLQMzYCZn7LHRyzljalbue1EJp9pFCr_a0/exec"; 
+        const API_URL = "https://script.google.com/macros/s/AKfycbwXbh0_7jrRSP8V9AMpikca6f_58-MFr30iashS8DHQncgu2pix1r1qMLXf5CjyHLI/exec"; 
         // ==========================================
 
         const { useState, useEffect, useMemo } = React;
         const { AreaChart, Area, ResponsiveContainer, Tooltip } = window.Recharts || {};
 
-        // Helper: Format Currency (Optimized)
         const formatMoney = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val || 0);
 
-        // Helper: Image Compression
         const compressImage = (file) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -88,11 +85,8 @@
                         resolve(canvas.toDataURL('image/jpeg', 0.6)); 
                     };
                 };
-                reader.onerror = (error) => reject(error);
             });
         };
-
-        // --- COMPONENTS ---
 
         function Avatar({ imageId, name, size="md", selected, onClick }) {
             const [error, setError] = useState(false);
@@ -178,7 +172,7 @@
             };
 
             const removePerson = async (p) => {
-                if(!confirm(`Remove ${p.name}?`)) return;
+                if(!confirm(`Are you sure you want to remove ${p.name}?`)) return;
                 setLoading(true);
                 try {
                     const res = await fetch(API_URL, {
@@ -199,19 +193,19 @@
                 let cashBal=0, onlineBal=0, rented=0, taken=0;
                 const graph = {};
                 
-                // This function standardizes the transaction type relative to "ME"
+                // Helper to map type for Synced Transactions (Global Stats)
                 const getEffectiveType = (t) => {
                     const isMine = t.userId === currentUser.id;
                     if (isMine) return t.type;
                     
-                    // Logic for Synced Transactions (Created by others)
-                    if (t.type === 'lent') return 'borrowed'; // They lent to me -> I borrowed
-                    if (t.type === 'borrowed') return 'lent'; // They borrowed from me -> I lent
-                    if (t.type === 'repayment_in') return 'repayment_out'; // They got paid -> I paid
-                    if (t.type === 'repayment_out') return 'repayment_in'; // They paid -> I got paid
+                    if (t.type === 'lent') return 'borrowed';
+                    if (t.type === 'borrowed') return 'lent';
+                    if (t.type === 'repayment_in') return 'repayment_out';
+                    if (t.type === 'repayment_out') return 'repayment_in';
                     return t.type;
                 };
 
+                // 1. Calculate Global Cashflow (Home Screen)
                 data.transactions.forEach(t => {
                     const type = getEffectiveType(t);
                     const amt = t.amount;
@@ -228,61 +222,41 @@
                     if(['income','borrowed','repayment_in'].includes(type)) graph[d].val+=amt; else graph[d].val-=amt;
                 });
 
-                // Calculate Net Balance per Friend (Including Synced)
+                // 2. Calculate Per-Friend Net Balance (Friends Screen)
                 const peopleStats = data.people.map(p => {
                     let net = 0;
                     data.transactions.forEach(t => {
                         const isMine = t.userId === currentUser.id;
-                        
-                        // 1. Transactions I created for this friend
-                        if (isMine && t.relatedPerson === p.id) {
-                            if(t.type === 'lent') net += t.amount;
-                            if(t.type === 'repayment_in') net -= t.amount;
-                            if(t.type === 'borrowed') net -= t.amount;
-                            if(t.type === 'repayment_out') net += t.amount;
-                        }
-                        
-                        // 2. Transactions THEY created (Synced) - Check by Email Match
-                        // Note: p.email is populated by backend if they are a registered user
-                        if (!isMine && t.relatedEmail && t.relatedEmail === currentUser.email) {
-                            // We need to know if this synced transaction belongs to THIS friend 'p'
-                            // We do this by checking if the Creator (t.userId) is the one linked to Friend 'p'
-                            // In a perfect world, we'd check t.userId against p.linkedUserId, but we can infer via email lookup or simplified matching
-                            // For this Lite version, we only show synced balance if we can match emails or if it's the only friend context
-                            
-                            // To make this robust: The backend 'getData' for people could return the linked user's ID. 
-                            // Current hack: We assume if the email matches, it affects my global balance, but assigning to specific friend 'p' requires 'p' to have that email.
-                            if(p.email) {
-                                // If the transaction creator's email matches this friend's email
-                                // (Requires backend to send creator email, which it does in 'relatedEmail'?? No, relatedEmail is the TARGET)
-                                // Simplified: We trust the User ID link.
-                                // We will skip specific synced mapping in the 'People' list for now to avoid complexity without UserID matching,
-                                // BUT the global 'rented' and 'taken' stats above ARE correct because they iterate all transactions.
-                            }
-                        }
-                    });
-                    
-                    // Re-looping specifically for accurate People Stats using the "Effective Type" logic
-                    // This finds any transaction (mine or theirs) that involves this specific friend relationship
-                    let finalNet = 0;
-                    // We need to match transactions to this person.
-                    // If I created it: t.relatedPerson === p.id
-                    // If THEY created it: t.userId (creator) === p.userId (this is tricky without linking).
-                    // Workaround: We only sum what *I* tracked for now to keep the UI clean, 
-                    // unless we implement full UserID matching in the frontend.
-                    // For the prompt's data (Amir lent Sarbajeet), Amir sees +15. Sarbajeet sees -15 in GLOBAL, but maybe not under "Amir" in list unless linked.
-                    
-                    // Let's stick to Local + Linked logic for now.
-                    data.transactions.forEach(t => {
-                        if(t.userId === currentUser.id && t.relatedPerson === p.id) {
-                             if(t.type === 'lent') finalNet += t.amount;
-                             if(t.type === 'repayment_in') finalNet -= t.amount;
-                             if(t.type === 'borrowed') finalNet -= t.amount;
-                             if(t.type === 'repayment_out') finalNet += t.amount;
-                        }
-                    });
+                        const friendEmail = p.email ? p.email.toLowerCase() : "";
+                        const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
 
-                    return { ...p, net: finalNet };
+                        // A. Transactions I Created (Linked to this Friend ID)
+                        if (isMine && t.relatedPerson === p.id) {
+                            if(t.type === 'lent') net += t.amount;          // I lent = (+ Net)
+                            if(t.type === 'repayment_in') net -= t.amount;  // I got paid = (- Net)
+                            if(t.type === 'borrowed') net -= t.amount;      // I borrowed = (- Net)
+                            if(t.type === 'repayment_out') net += t.amount; // I paid back = (+ Net)
+                        }
+                        
+                        // B. Transactions THEY Created (Synced via Email)
+                        // Logic: I didn't create it, but the Creator is THIS friend (via email check)
+                        if (!isMine && creatorEmail === friendEmail) {
+                            // If they say "Lent" (to me), then I "Borrowed" -> (- Net)
+                            if(t.type === 'lent') net -= t.amount;
+                            
+                            // If they say "Borrowed" (from me), then I "Lent" -> (+ Net)
+                            if(t.type === 'borrowed') net += t.amount; 
+                            
+                            // If they say "Repayment In" (They received money from me), I paid them.
+                            // My debt decreases (or credit increases). So (+ Net).
+                            if(t.type === 'repayment_in') net += t.amount; 
+                            
+                            // If they say "Repayment Out" (They paid me), I received money.
+                            // My credit decreases. So (- Net).
+                            if(t.type === 'repayment_out') net -= t.amount; 
+                        }
+                    });
+                    return { ...p, net };
                 });
 
                 return { cashBal, onlineBal, total: cashBal+onlineBal, rented, taken, graph: Object.values(graph).sort((a,b)=>new Date(a.date)-new Date(b.date)), peopleStats };
@@ -333,7 +307,6 @@
                                     let effectiveType = t.type;
                                     let displayType = t.type;
                                     
-                                    // Visual Logic for Synced Items
                                     if(!isMine) {
                                         if (t.type === 'lent') effectiveType = 'borrowed';
                                         else if (t.type === 'borrowed') effectiveType = 'lent';
