@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>FinanceMax Platinum</title>
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0f172a">
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -24,7 +22,6 @@
             }
         }
     </script>
-    
     <style>
         body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .hide-scroll::-webkit-scrollbar { display: none; }
@@ -32,111 +29,58 @@
         .dark .glass { background: rgba(15, 23, 42, 0.6); }
         .loader { width: 20px; height: 20px; border: 2px solid #fff; border-bottom-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        
         .input-field { width: 100%; padding: 1rem; border-radius: 1rem; background-color: #f8fafc; outline: none; border: 1px solid transparent; transition: all 0.2s; }
         .dark .input-field { background-color: #1e293b; color: white; }
         .input-field:focus { box-shadow: 0 0 0 2px #6366f1; background-color: white; }
         .dark .input-field:focus { background-color: #0f172a; }
-        
         .btn-primary { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; font-weight: bold; border-radius: 1rem; padding: 1rem; transition: transform 0.1s; width: 100%; }
         .btn-primary:active { transform: scale(0.98); }
         .icon-btn { padding: 0.5rem; border-radius: 9999px; background-color: #f1f5f9; color: #64748b; transition: all; }
         .dark .icon-btn { background-color: #1e293b; color: #94a3b8; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
     </style>
-
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
     <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 font-sans h-screen w-screen overflow-hidden selection:bg-indigo-500 selection:text-white">
-
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 font-sans h-screen w-screen overflow-hidden">
     <div id="root" class="h-full w-full"></div>
-
     <script type="text/babel">
-        // ==========================================
         // 🔴 PASTE YOUR BACKEND URL HERE 🔴
-        // ==========================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbwe7Dz5o-FVPcN-0H3zVdZ6SSpZJwqr2Dl7KEPMWWnFhX50rTUclQAXle6jGZbfMvo/exec"; 
-        // ==========================================
+        const API_URL = "https://script.google.com/macros/s/AKfycbw2Li_AXClhAMIP7yh7gKqpGVg_w3CjqegbDBimYFz4Tv8MIKC6y19aKlVdB5_HeT8/exec"; 
 
         const { useState, useEffect, useMemo } = React;
         const { AreaChart, Area, ResponsiveContainer, Tooltip } = window.Recharts || {};
-
         const formatMoney = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val || 0);
+        const compressImage = (file) => new Promise((resolve) => {
+            const reader = new FileReader(); reader.readAsDataURL(file);
+            reader.onload = (e) => { const img = new Image(); img.src = e.target.result; img.onload = () => { const canvas = document.createElement('canvas'); const scale = 600 / img.width; canvas.width = 600; canvas.height = img.height * scale; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); resolve(canvas.toDataURL('image/jpeg', 0.6)); }; };
+        });
 
-        const compressImage = (file) => {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const scaleSize = 600 / img.width;
-                        canvas.width = 600;
-                        canvas.height = img.height * scaleSize;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.6)); 
-                    };
-                };
-            });
-        };
-
-        function Avatar({ imageId, name, size="md", selected, onClick }) {
-            const [error, setError] = useState(false);
+        function Avatar({ imageId, name, size="md" }) {
+            const [err, setErr] = useState(false);
             const dims = size==='lg'?'w-24 h-24 text-4xl':size==='sm'?'w-8 h-8 text-xs':'w-12 h-12 text-base';
             const url = imageId ? `https://drive.google.com/thumbnail?id=${imageId}&sz=w400` : null;
-            return (
-                <div onClick={onClick} className={`shrink-0 rounded-full flex items-center justify-center overflow-hidden border-2 cursor-pointer transition-all ${dims} ${selected ? 'border-indigo-500 ring-4 ring-indigo-500/30 scale-105' : 'border-slate-200 dark:border-slate-700'} ${(!url || error) && 'bg-gradient-to-br from-indigo-100 to-indigo-50 text-indigo-600 dark:from-slate-800 dark:to-slate-900 dark:text-slate-400'}`}>
-                    {url && !error ? <img src={url} className="w-full h-full object-cover" onError={() => setError(true)} referrerPolicy="no-referrer" /> : <span className="font-bold">{name?name[0].toUpperCase():'?'}</span>}
-                </div>
-            );
+            return <div className={`shrink-0 rounded-full flex items-center justify-center overflow-hidden border-2 ${dims} border-slate-200 dark:border-slate-700 ${(!url || err) && 'bg-gradient-to-br from-indigo-100 to-indigo-50 text-indigo-600 dark:from-slate-800 dark:text-slate-400'}`}>{url && !err ? <img src={url} className="w-full h-full object-cover" onError={()=>setErr(true)}/> : <span className="font-bold">{name?name[0].toUpperCase():'?'}</span>}</div>;
         }
 
-        function Auth({ onLogin }) {
-            const [view, setView] = useState('login');
-            const [form, setForm] = useState({ email: '', password: '', username: '', phone: '' });
-            const [loading, setLoading] = useState(false);
-            const [msg, setMsg] = useState(null);
-
-            const submit = async (e) => {
-                e.preventDefault(); setLoading(true); setMsg(null);
-                try {
-                    const url = view === 'login' ? `${API_URL}?action=login&email=${form.email}&password=${form.password}` : API_URL;
-                    const opts = view === 'login' ? {} : { method: 'POST', body: JSON.stringify({ action: view, ...form }) };
-                    const res = await fetch(url, opts);
-                    const json = await res.json();
-                    if(json.success) {
-                        if(view === 'login') onLogin(json.user);
-                        else { setMsg({type:'s', text:'Success! Login now.'}); setView('login'); }
-                    } else setMsg({type:'e', text: json.error});
-                } catch(e) { setMsg({type:'e', text: "Connection Error"}); }
-                setLoading(false);
-            };
-
+        // --- CUSTOM CONFIRM DIALOG ---
+        function ConfirmDialog({ isOpen, title, msg, onConfirm, onCancel, type='neutral' }) {
+            if(!isOpen) return null;
             return (
-                <div className="h-full flex items-center justify-center p-6 bg-slate-100 dark:bg-slate-900">
-                    <div className="w-full max-w-sm bg-white dark:bg-slate-950 p-8 rounded-[2rem] shadow-2xl animate-up">
-                        <h1 className="text-3xl font-bold text-center mb-2">FinanceMax</h1>
-                        {msg && <div className={`p-3 rounded-xl text-center text-sm mb-4 font-bold ${msg.type==='e'?'bg-red-50 text-red-500':'bg-emerald-50 text-emerald-600'}`}>{msg.text}</div>}
-                        <form onSubmit={submit} className="space-y-4 mt-6">
-                            {view==='signup' && (
-                                <>
-                                    <input className="input-field" placeholder="Username" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} required />
-                                    <input className="input-field" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} />
-                                </>
-                            )}
-                            <input className="input-field" placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} required />
-                            <input type="password" className="input-field" placeholder="Password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} required />
-                            <button disabled={loading} className="btn-primary shadow-xl shadow-indigo-500/30">{loading ? <div className="loader mx-auto"></div> : (view==='login'?'Login':'Sign Up')}</button>
-                        </form>
-                        <button onClick={()=>setView(view==='login'?'signup':'login')} className="w-full mt-6 text-sm text-slate-400 hover:text-indigo-500">{view==='login'?'Create Account':'Back to Login'}</button>
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-xs rounded-[2rem] p-6 shadow-2xl animate-up text-center">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${type==='danger'?'bg-red-100 text-red-500':'bg-indigo-100 text-indigo-500'}`}>
+                            <i data-lucide={type==='danger'?'alert-triangle':'help-circle'} className="w-6 h-6"></i>
+                        </div>
+                        <h3 className="font-bold text-lg dark:text-white mb-2">{title}</h3>
+                        <p className="text-slate-500 text-sm mb-6">{msg}</p>
+                        <div className="flex gap-3">
+                            <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-sm">Cancel</button>
+                            <button onClick={onConfirm} className={`flex-1 py-3 rounded-xl font-bold text-sm text-white shadow-lg ${type==='danger'?'bg-red-500 shadow-red-500/30':'bg-indigo-600 shadow-indigo-500/30'}`}>Confirm</button>
+                        </div>
                     </div>
                 </div>
             );
@@ -144,20 +88,17 @@
 
         function Dashboard({ user, onLogout }) {
             const [data, setData] = useState({ transactions: [], people: [] });
-            const [view, setView] = useState('home'); 
-            const [loading, setLoading] = useState(false);
-            const [darkMode, setDarkMode] = useState(true);
+            const [view, setView] = useState('home');
             const [modal, setModal] = useState(null); 
-            const [editItem, setEditItem] = useState(null); 
+            const [editItem, setEditItem] = useState(null);
             const [rejectedItems, setRejectedItems] = useState([]);
+            const [dialog, setDialog] = useState({ isOpen: false }); 
+            const [darkMode, setDarkMode] = useState(true);
             const [currentUser, setCurrentUser] = useState(user);
+            const [loading, setLoading] = useState(false);
 
-            useEffect(() => {
-                if(darkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark');
-                fetchData();
-            }, [darkMode]);
-
-            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data, rejectedItems]);
+            useEffect(() => { darkMode ? document.documentElement.classList.add('dark') : document.documentElement.classList.remove('dark'); fetchData(); }, [darkMode]);
+            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data, rejectedItems, dialog]);
 
             const fetchData = async () => {
                 setLoading(true);
@@ -167,8 +108,6 @@
                     if(json.success) {
                         setData({ transactions: json.transactions, people: json.people });
                         if(json.userProfile) setCurrentUser(json.userProfile);
-                        
-                        // Check for rejected items created by me
                         const rejected = json.transactions.filter(t => t.userId === currentUser.id && t.status === 'Rejected');
                         if (rejected.length > 0) setRejectedItems(rejected);
                     }
@@ -176,38 +115,38 @@
                 setLoading(false);
             };
 
-            const handleApproval = async (t, status) => {
-                if(!confirm(`${status} this transaction?`)) return;
-                setLoading(true);
-                await fetch(API_URL, { 
-                    method: 'POST', 
-                    body: JSON.stringify({ action: 'handleApproval', transactionId: t.id, status: status }) 
-                });
-                fetchData();
+            const confirmAction = (title, msg, onConfirm, type='neutral') => {
+                setDialog({ isOpen: true, title, msg, onConfirm: () => { onConfirm(); setDialog({ isOpen: false }); }, onCancel: () => setDialog({ isOpen: false }), type });
             };
 
-            const removePerson = async (p) => {
-                if(!confirm(`Remove ${p.name}?`)) return;
-                setLoading(true);
-                try {
-                    const res = await fetch(API_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'deletePerson', userId: currentUser.id, personId: p.id })
-                    });
-                    const json = await res.json();
-                    if(json.success) fetchData();
-                    else alert(json.error);
-                } catch(e) { alert("Error removing friend"); }
-                setLoading(false);
+            const handleApproval = (t, status) => {
+                confirmAction(
+                    status === 'Confirmed' ? 'Approve Transaction?' : 'Reject Transaction?', 
+                    `Are you sure you want to ${status.toLowerCase()} this request from ${t.creatorEmail}?`, 
+                    async () => {
+                        setLoading(true);
+                        await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'handleApproval', transactionId: t.id, status: status }) });
+                        fetchData();
+                    }, 
+                    status === 'Rejected' ? 'danger' : 'neutral'
+                );
             };
 
-            const openEdit = (item) => { setEditItem(item); setModal('add'); };
+            const removePerson = (p) => {
+                confirmAction('Remove Friend?', `This will permanently remove ${p.name}. Ensure balance is settled.`, async () => {
+                    setLoading(true);
+                    try {
+                        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'deletePerson', userId: currentUser.id, personId: p.id }) });
+                        const json = await res.json();
+                        if(json.success) fetchData(); else alert(json.error);
+                    } catch(e) { alert("Error removing friend"); }
+                    setLoading(false);
+                }, 'danger');
+            };
 
-            // --- STATS LOGIC (Only Confirmed Transactions) ---
             const stats = useMemo(() => {
                 let cashBal=0, onlineBal=0, rented=0, taken=0;
                 const graph = {};
-                
                 const getEffectiveType = (t) => {
                     const isMine = t.userId === currentUser.id;
                     if (isMine) return t.type;
@@ -219,18 +158,16 @@
                 };
 
                 data.transactions.forEach(t => {
-                    if (t.status !== 'Confirmed') return; // Skip Pending/Rejected
-
+                    if (t.status !== 'Confirmed') return;
                     const type = getEffectiveType(t);
                     const amt = t.amount;
-
                     if(type === 'income') t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt;
                     if(type === 'expense') t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt;
                     if(type === 'borrowed') { taken += amt; t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt; }
                     if(type === 'lent') { rented += amt; t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt; }
                     if(type === 'repayment_in') { rented -= amt; t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt; }
                     if(type === 'repayment_out') { taken -= amt; t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt; }
-
+                    
                     const d = t.date.split('T')[0];
                     if(!graph[d]) graph[d] = {date:d, val:0};
                     if(['income','borrowed','repayment_in'].includes(type)) graph[d].val+=amt; else graph[d].val-=amt;
@@ -240,7 +177,6 @@
                     let net = 0;
                     data.transactions.forEach(t => {
                         if (t.status !== 'Confirmed') return;
-
                         const isMine = t.userId === currentUser.id;
                         const friendEmail = p.email ? p.email.toLowerCase() : "";
                         const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
@@ -251,7 +187,6 @@
                             if(t.type === 'borrowed') net -= t.amount;
                             if(t.type === 'repayment_out') net += t.amount;
                         }
-                        
                         if (!isMine && creatorEmail === friendEmail) {
                             if(t.type === 'lent') net -= t.amount;
                             if(t.type === 'borrowed') net += t.amount; 
@@ -259,13 +194,13 @@
                             if(t.type === 'repayment_out') net -= t.amount; 
                         }
                     });
+                    if (Math.abs(net) < 0.01) net = 0;
                     return { ...p, net };
                 });
 
                 return { cashBal, onlineBal, total: cashBal+onlineBal, rented, taken, graph: Object.values(graph).sort((a,b)=>new Date(a.date)-new Date(b.date)), peopleStats };
             }, [data.transactions, currentUser.id]);
 
-            // Filter Requests (Incoming & Pending)
             const requests = data.transactions.filter(t => t.userId !== currentUser.id && t.status === 'Pending');
 
             return (
@@ -310,25 +245,14 @@
                                 <h2 className="text-xl font-bold dark:text-white px-2">Pending Requests</h2>
                                 {requests.length === 0 && <p className="text-center text-slate-400 mt-10">No pending requests.</p>}
                                 {requests.map(t => {
-                                    // Inverse logic for display: If they Lent, I Borrowed
                                     let type = t.type;
-                                    if(type === 'lent') type = 'borrowed';
-                                    else if(type === 'borrowed') type = 'lent';
-                                    else if(type === 'repayment_in') type = 'repayment_out';
-                                    else if(type === 'repayment_out') type = 'repayment_in';
-
+                                    if(type === 'lent') type = 'borrowed'; else if(type === 'borrowed') type = 'lent';
+                                    else if(type === 'repayment_in') type = 'repayment_out'; else if(type === 'repayment_out') type = 'repayment_in';
                                     return (
                                         <div key={t.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200 dark:border-indigo-900 shadow-sm">
                                             <div className="flex justify-between items-start mb-4">
-                                                <div>
-                                                    <p className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">{t.creatorEmail}</p>
-                                                    <p className="font-bold dark:text-white text-lg">{t.category}</p>
-                                                    <p className="text-slate-400 text-sm">{t.description}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="font-bold text-xl block dark:text-white">{formatMoney(t.amount)}</span>
-                                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${type==='borrowed'?'bg-amber-100 text-amber-600':'bg-blue-100 text-blue-600'}`}>{type === 'borrowed' ? 'You Owe' : 'They Owe'}</span>
-                                                </div>
+                                                <div><p className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">{t.creatorEmail}</p><p className="font-bold dark:text-white text-lg">{t.category}</p><p className="text-slate-400 text-sm">{t.description}</p></div>
+                                                <div className="text-right"><span className="font-bold text-xl block dark:text-white">{formatMoney(t.amount)}</span><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${type==='borrowed'?'bg-amber-100 text-amber-600':'bg-blue-100 text-blue-600'}`}>{type === 'borrowed' ? 'You Owe' : 'They Owe'}</span></div>
                                             </div>
                                             <div className="flex gap-3">
                                                 <button onClick={()=>handleApproval(t, 'Rejected')} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold border border-red-100 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50">Reject</button>
@@ -346,19 +270,17 @@
                                 {data.transactions.map(t => {
                                     const isMine = t.userId === currentUser.id;
                                     let effectiveType = t.type;
-                                    
+                                    let displayType = t.type;
                                     if(!isMine) {
-                                        if (t.type === 'lent') effectiveType = 'borrowed';
-                                        else if (t.type === 'borrowed') effectiveType = 'lent';
-                                        else if (t.type === 'repayment_in') effectiveType = 'repayment_out';
-                                        else if (t.type === 'repayment_out') effectiveType = 'repayment_in';
+                                        if (t.type === 'lent') effectiveType = 'borrowed'; else if (t.type === 'borrowed') effectiveType = 'lent';
+                                        else if (t.type === 'repayment_in') effectiveType = 'repayment_out'; else if (t.type === 'repayment_out') effectiveType = 'repayment_in';
+                                        displayType = effectiveType;
                                     }
-
                                     return (
-                                        <div key={t.id} onClick={() => isMine ? openEdit(t) : alert("Synced Transaction. Cannot edit.")} className={`flex justify-between items-center p-4 bg-white dark:bg-slate-900 rounded-2xl border ${!isMine ? 'border-dashed border-indigo-300 dark:border-indigo-800' : 'border-slate-200 dark:border-slate-800'} shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition`}>
+                                        <div key={t.id} onClick={() => isMine ? (setEditItem(t), setModal('add')) : alert("Synced Transaction. Cannot edit.")} className={`flex justify-between items-center p-4 bg-white dark:bg-slate-900 rounded-2xl border ${!isMine ? 'border-dashed border-indigo-300 dark:border-indigo-800' : 'border-slate-200 dark:border-slate-800'} shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition`}>
                                             <div className="flex gap-4 items-center">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${effectiveType.includes('income')?'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':effectiveType.includes('expense')?'bg-red-50 text-red-600 dark:bg-red-900/20':'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}>
-                                                    <i data-lucide={effectiveType==='income'?'arrow-down':effectiveType==='expense'?'arrow-up':'refresh-cw'} className="w-5 h-5"></i>
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${displayType.includes('income')?'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':displayType.includes('expense')?'bg-red-50 text-red-600 dark:bg-red-900/20':'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}>
+                                                    <i data-lucide={displayType==='income'?'arrow-down':displayType==='expense'?'arrow-up':'refresh-cw'} className="w-5 h-5"></i>
                                                 </div>
                                                 <div className="min-w-0">
                                                     <p className="font-bold text-sm dark:text-white truncate">
@@ -367,15 +289,12 @@
                                                         {t.status === 'Pending' && <span className="text-[10px] text-amber-500 bg-amber-50 px-1 rounded ml-1">PENDING</span>}
                                                         {t.status === 'Rejected' && <span className="text-[10px] text-red-500 bg-red-50 px-1 rounded ml-1">REJECTED</span>}
                                                     </p>
-                                                    <div className="flex items-center gap-1">
-                                                        <p className="text-xs text-slate-500 font-medium">{t.date.split('T')[0]} • {t.paymentMode}</p>
-                                                        {t.imageId && <i data-lucide="paperclip" className="w-3 h-3 text-indigo-500"></i>}
-                                                    </div>
+                                                    <div className="flex items-center gap-1"><p className="text-xs text-slate-500 font-medium">{t.date.split('T')[0]} • {t.paymentMode}</p>{t.imageId && <i data-lucide="paperclip" className="w-3 h-3 text-indigo-500"></i>}</div>
                                                 </div>
                                             </div>
                                             <div className="text-right shrink-0">
                                                 <span className="font-bold block dark:text-white text-lg">{formatMoney(t.amount)}</span>
-                                                <span className="text-[10px] font-bold uppercase text-slate-400">{effectiveType==='income'?'In':effectiveType==='expense'?'Out':effectiveType==='borrowed'?'Debt':'Lent'}</span>
+                                                <span className="text-[10px] font-bold uppercase text-slate-400">{displayType==='income'?'In':displayType==='expense'?'Out':displayType==='borrowed'?'Debt':'Lent'}</span>
                                             </div>
                                         </div>
                                     );
@@ -385,19 +304,13 @@
 
                         {view === 'people' && (
                             <div className="space-y-4 animate-fade">
-                                <div className="flex justify-between items-center px-2">
-                                    <h2 className="text-xl font-bold dark:text-white">Friends</h2>
-                                    <button onClick={()=>{setEditItem(null); setModal('person');}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/30">+ Add Friend</button>
-                                </div>
+                                <div className="flex justify-between items-center px-2"><h2 className="text-xl font-bold dark:text-white">Friends</h2><button onClick={()=>{setEditItem(null); setModal('person');}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/30">+ Add Friend</button></div>
                                 {stats.peopleStats.map(p => (
                                     <div key={p.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                                         <div className="flex items-center gap-3">
                                             <Avatar imageId={p.imageId} name={p.name} />
                                             <div>
-                                                <div className="flex items-center gap-2">
-                                                    <p className="font-bold dark:text-white">{p.name}</p>
-                                                    {p.email && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded font-bold">LINKED</span>}
-                                                </div>
+                                                <div className="flex items-center gap-2"><p className="font-bold dark:text-white">{p.name}</p>{p.email && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded font-bold">LINKED</span>}</div>
                                                 <p className={`text-xs font-bold ${p.net > 0 ? 'text-emerald-500' : p.net < 0 ? 'text-red-500' : 'text-slate-400'}`}>
                                                     {p.net > 0 ? `He will give ${formatMoney(p.net)}` : p.net < 0 ? `You will give ${formatMoney(Math.abs(p.net))}` : 'Settled'}
                                                 </p>
@@ -425,28 +338,33 @@
                         ))}
                     </div>
 
+                    {/* CONFIRM DIALOG */}
+                    <ConfirmDialog isOpen={dialog.isOpen} title={dialog.title} msg={dialog.msg} onConfirm={dialog.onConfirm} onCancel={dialog.onCancel} type={dialog.type} />
+
+                    {/* REJECTED POPUP */}
                     {rejectedItems.length > 0 && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-                            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 animate-up shadow-2xl text-center">
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade">
+                            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-up relative text-center">
+                                <button onClick={()=>setRejectedItems(prev=>prev.slice(1))} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" className="w-5 h-5"></i></button>
                                 <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="alert-circle" className="w-8 h-8"></i></div>
                                 <h3 className="font-bold text-xl dark:text-white mb-2">Request Rejected</h3>
-                                <p className="text-slate-500 text-sm mb-6">Your transaction "{rejectedItems[0].description}" of {formatMoney(rejectedItems[0].amount)} was rejected by the friend.</p>
+                                <p className="text-slate-500 text-sm mb-6">Your transaction "{rejectedItems[0].description}" of {formatMoney(rejectedItems[0].amount)} was rejected.</p>
                                 <div className="flex gap-3">
                                     <button onClick={()=>{
-                                        if(confirm("Delete this rejected record?")) {
+                                        confirmAction('Delete Record?', 'This will permanently delete this rejected request.', ()=>{
                                             fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})}).then(()=>fetchData());
                                             setRejectedItems(prev => prev.slice(1));
-                                        }
+                                        }, 'danger');
                                     }} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold">Delete</button>
                                     <button onClick={()=>{
-                                        // Open Edit Modal to "Resend" (User saves -> creates new request)
-                                        setEditItem(rejectedItems[0]); 
-                                        setModal('add');
-                                        // Also delete the old rejected one silently to clean up? Or keep it? 
-                                        // Better UX: Delete old one immediately so "Save" creates fresh pending one.
+                                        // FIXED: Retry Logic - Strip ID to create NEW pending transaction
+                                        const { id, ...retryData } = rejectedItems[0];
+                                        // Also need to manually delete the old rejected one to keep DB clean
                                         fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})});
+                                        setEditItem(retryData); 
+                                        setModal('add');
                                         setRejectedItems(prev => prev.slice(1));
-                                    }} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg">Resend</button>
+                                    }} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg">Retry</button>
                                 </div>
                             </div>
                         </div>
@@ -458,340 +376,131 @@
             );
         }
 
-        // --- UPDATED TRANSACTION MODAL ---
+        // --- COMPONENTS & MODALS ---
         function TransactionModal({ user, people, editItem, onClose }) {
-            const [tab, setTab] = useState(editItem ? 'simple' : 'simple'); 
+            const [tab, setTab] = useState(editItem ? (['lent','borrowed','repayment_in','repayment_out'].includes(editItem.type)?'friend':'simple') : 'simple'); 
             const [splitMode, setSplitMode] = useState('equal');
             const [includeMe, setIncludeMe] = useState(true);
             const [selectedFriends, setSelectedFriends] = useState([]); 
             const [splitAmounts, setSplitAmounts] = useState({}); 
-
-            const [form, setForm] = useState(editItem ? {
-                type: editItem.type,
-                amount: editItem.amount,
-                category: editItem.category,
-                description: editItem.description,
-                date: editItem.date.split('T')[0],
-                relatedPerson: editItem.relatedPerson || '',
-                paymentMode: editItem.paymentMode || 'Online',
-                totalBill: ''
-            } : { 
-                type: 'expense', amount: '', category: 'General', description: '', 
-                date: new Date().toISOString().split('T')[0], relatedPerson: '', 
-                paymentMode: 'Online', totalBill: ''
-            });
+            const [form, setForm] = useState(editItem ? { ...editItem, date: editItem.date.split('T')[0], totalBill: '' } : { type: 'expense', amount: '', category: 'General', description: '', date: new Date().toISOString().split('T')[0], relatedPerson: '', paymentMode: 'Online', totalBill: '' });
             const [loading, setLoading] = useState(false);
 
-            useEffect(() => {
-                if(editItem) {
-                    if(['lent','borrowed','repayment_in','repayment_out'].includes(editItem.type)) setTab('friend');
-                    else setTab('simple');
-                }
-            }, [editItem]);
+            useEffect(() => { if(tab === 'split' && splitMode === 'equal' && form.totalBill) {
+                const total = parseFloat(form.totalBill) || 0;
+                const participants = [...selectedFriends]; if(includeMe) participants.push('me');
+                const count = participants.length;
+                if(count > 0) { const share = parseFloat((total / count).toFixed(2)); const newSplits = {}; selectedFriends.forEach(id => newSplits[id] = share); if(includeMe) newSplits['me'] = share; setSplitAmounts(newSplits); }
+            }}, [form.totalBill, selectedFriends, includeMe, splitMode, tab]);
 
-            // Split Logic
-            useEffect(() => {
-                if(tab === 'split' && splitMode === 'equal' && form.totalBill) {
-                    const total = parseFloat(form.totalBill) || 0;
-                    const participants = [...selectedFriends];
-                    if(includeMe) participants.push('me');
-                    const count = participants.length;
-                    
-                    if(count > 0) {
-                        const share = parseFloat((total / count).toFixed(2));
-                        const newSplits = {};
-                        selectedFriends.forEach(id => newSplits[id] = share);
-                        if(includeMe) newSplits['me'] = share;
-                        setSplitAmounts(newSplits);
-                    }
-                }
-            }, [form.totalBill, selectedFriends, includeMe, splitMode, tab]);
-
-            const toggleFriend = (id) => {
-                if(selectedFriends.includes(id)) setSelectedFriends(prev => prev.filter(f => f !== id));
-                else setSelectedFriends(prev => [...prev, id]);
-            };
-
-            const handleImage = (e) => {
-                const file = e.target.files[0];
-                if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64}));
-            };
+            const toggleFriend = (id) => selectedFriends.includes(id) ? setSelectedFriends(prev => prev.filter(f => f !== id)) : setSelectedFriends(prev => [...prev, id]);
+            const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); };
 
             const submit = async (e) => {
                 e.preventDefault(); setLoading(true);
                 let body = {};
+                // FIXED: Check for ID to determine Update vs Add
+                const isUpdate = editItem && editItem.id;
                 
                 if(tab === 'split') {
                     const items = [];
-                    if(includeMe && splitAmounts['me'] > 0) {
-                        items.push({ ...form, type: 'expense', amount: parseFloat(splitAmounts['me']), description: `${form.description} (My Share)`, relatedPerson: '' });
-                    }
-                    selectedFriends.forEach(id => {
-                        if(splitAmounts[id] > 0) {
-                            items.push({ ...form, type: 'lent', amount: parseFloat(splitAmounts[id]), description: `${form.description} (Split Bill)`, relatedPerson: id });
-                        }
-                    });
+                    if(includeMe && splitAmounts['me'] > 0) items.push({ ...form, type: 'expense', amount: parseFloat(splitAmounts['me']), description: `${form.description} (My Share)`, relatedPerson: '' });
+                    selectedFriends.forEach(id => { if(splitAmounts[id] > 0) items.push({ ...form, type: 'lent', amount: parseFloat(splitAmounts[id]), description: `${form.description} (Split Bill)`, relatedPerson: id }); });
                     if(items.length === 0) { alert("Invalid split"); setLoading(false); return; }
                     body = { action: 'batchAdd', userId: user.id, items };
                 } else {
-                    body = { action: editItem ? 'update' : 'add', id: editItem ? editItem.id : undefined, userId: user.id, ...form };
+                    body = { action: isUpdate ? 'update' : 'add', id: isUpdate ? editItem.id : undefined, userId: user.id, ...form };
                 }
-
                 await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
                 onClose();
             };
 
-            const handleDelete = async () => {
-                if(!confirm("Delete this?")) return;
-                setLoading(true);
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', id: editItem.id, userId: user.id }) });
-                onClose();
-            };
-
+            const handleDelete = async () => { if(!confirm("Delete this?")) return; setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', id: editItem.id, userId: user.id }) }); onClose(); };
             const remaining = (parseFloat(form.totalBill)||0) - Object.values(splitAmounts).reduce((a,b) => a + (parseFloat(b)||0), 0);
 
             return (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-sm p-2 sm:items-center">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-up max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-xl dark:text-white">{editItem ? 'Edit Entry' : 'New Entry'}</h3>
-                            <button onClick={onClose} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full"><i data-lucide="x" className="w-5 h-5"></i></button>
-                        </div>
-
-                        {!editItem && <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl mb-6">
-                            {['simple', 'friend', 'split'].map(t => (
-                                <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${tab===t?'bg-white dark:bg-slate-700 shadow text-indigo-500':'text-slate-400'}`}>{t}</button>
-                            ))}
-                        </div>}
-
+                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl dark:text-white">{editItem && editItem.id ? 'Edit Entry' : 'New Entry'}</h3><button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button></div>
+                        {!editItem && <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl mb-6">{['simple', 'friend', 'split'].map(t => (<button key={t} onClick={()=>setTab(t)} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${tab===t?'bg-white dark:bg-slate-700 shadow text-indigo-500':'text-slate-400'}`}>{t}</button>))}</div>}
                         <form onSubmit={submit} className="space-y-5">
-                            {tab === 'simple' && (
-                                <div className="flex gap-3">
-                                    <button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money In</button>
-                                    <button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600 dark:bg-red-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money Out</button>
-                                </div>
-                            )}
-
-                            {tab === 'split' && (
-                                <div className="space-y-4">
-                                    <div className="flex gap-2 mb-2">
-                                        <button type="button" onClick={()=>setSplitMode('equal')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='equal'?'border-indigo-500 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-200 text-slate-400'}`}>Equal</button>
-                                        <button type="button" onClick={()=>setSplitMode('custom')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='custom'?'border-indigo-500 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-200 text-slate-400'}`}>Custom</button>
-                                    </div>
-                                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/50">
-                                        <p className="text-xs font-bold text-indigo-400 uppercase mb-2">Total Bill</p>
-                                        <input type="number" placeholder="₹0" className="w-full bg-transparent text-3xl font-bold text-indigo-600 dark:text-indigo-400 outline-none" value={form.totalBill} onChange={e => setForm({...form, totalBill: e.target.value})} />
-                                    </div>
-                                    {splitMode === 'custom' && Math.abs(remaining) > 0.1 && (
-                                        <div className={`text-xs text-center font-bold ${remaining < 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                                            {remaining > 0 ? `Remaining: ${formatMoney(remaining)}` : `Over by: ${formatMoney(Math.abs(remaining))}`}
-                                        </div>
-                                    )}
-                                    <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer ${includeMe ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300'}`} onClick={()=>setIncludeMe(!includeMe)}>
-                                            {includeMe && <i data-lucide="check" className="w-3 h-3"></i>}
-                                        </div>
-                                        <div className="flex-1 text-sm font-bold dark:text-white">Include Me</div>
-                                        {includeMe && (
-                                            <input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts['me'] || ''} disabled={splitMode === 'equal'} onChange={e => setSplitAmounts({...splitAmounts, me: e.target.value})} />
-                                        )}
-                                    </div>
-                                    <div className="space-y-2 max-h-40 overflow-y-auto hide-scroll">
-                                        {people.map(p => (
-                                            <div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${selectedFriends.includes(p.id) ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-800'}`}>
-                                                <div onClick={()=>toggleFriend(p.id)} className="cursor-pointer">
-                                                    <Avatar imageId={p.imageId} name={p.name} size="sm" selected={selectedFriends.includes(p.id)} />
-                                                </div>
-                                                <div className="flex-1 text-sm font-bold dark:text-white cursor-pointer" onClick={()=>toggleFriend(p.id)}>{p.name}</div>
-                                                {selectedFriends.includes(p.id) && (
-                                                    <input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts[p.id] || ''} disabled={splitMode === 'equal'} onChange={e => setSplitAmounts({...splitAmounts, [p.id]: e.target.value})} />
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {tab === 'friend' && (
-                                <>
-                                    <select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})}>
-                                        <option value="lent">Money Rented (I gave)</option>
-                                        <option value="borrowed">Money Taken (I took)</option>
-                                        <option value="repayment_in">He Paid Back</option>
-                                        <option value="repayment_out">I Paid Back</option>
-                                    </select>
-                                    <div className="flex gap-4 overflow-x-auto pb-2 hide-scroll">
-                                        {people.map(p => (
-                                            <div key={p.id} onClick={()=>setForm({...form, relatedPerson: p.id})} className="flex flex-col items-center gap-2 cursor-pointer group">
-                                                <Avatar imageId={p.imageId} name={p.name} selected={form.relatedPerson === p.id} />
-                                                <span className={`text-[10px] font-bold ${form.relatedPerson === p.id ? 'text-indigo-500':'text-slate-500'}`}>{p.name}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-
-                            <div className="flex gap-2">
-                                <button type="button" onClick={()=>setForm({...form, paymentMode:'Online'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Online'?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Online</button>
-                                <button type="button" onClick={()=>setForm({...form, paymentMode:'Cash'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Cash'?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Cash</button>
-                            </div>
-
+                            {tab === 'simple' && <div className="flex gap-3"><button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money In</button><button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600 dark:bg-red-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money Out</button></div>}
+                            {tab === 'split' && <div className="space-y-4">
+                                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/50"><p className="text-xs font-bold text-indigo-400 uppercase mb-2">Total Bill</p><input type="number" placeholder="₹0" className="w-full bg-transparent text-3xl font-bold text-indigo-600 dark:text-indigo-400 outline-none" value={form.totalBill} onChange={e => setForm({...form, totalBill: e.target.value})} /></div>
+                                <div className="flex gap-2 mb-2"><button type="button" onClick={()=>setSplitMode('equal')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='equal'?'border-indigo-500 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-200 text-slate-400'}`}>Equal</button><button type="button" onClick={()=>setSplitMode('custom')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='custom'?'border-indigo-500 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-200 text-slate-400'}`}>Custom</button></div>
+                                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl"><div className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer ${includeMe ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300'}`} onClick={()=>setIncludeMe(!includeMe)}>{includeMe && <i data-lucide="check" className="w-3 h-3"></i>}</div><div className="flex-1 text-sm font-bold dark:text-white">Include Me</div>{includeMe && (<input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts['me'] || ''} disabled={splitMode === 'equal'} onChange={e => setSplitAmounts({...splitAmounts, me: e.target.value})} />)}</div>
+                                <div className="space-y-2 max-h-40 overflow-y-auto hide-scroll">{people.map(p => (<div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${selectedFriends.includes(p.id) ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-800'}`}><div onClick={()=>toggleFriend(p.id)} className="cursor-pointer"><Avatar imageId={p.imageId} name={p.name} size="sm" selected={selectedFriends.includes(p.id)} /></div><div className="flex-1 text-sm font-bold dark:text-white cursor-pointer" onClick={()=>toggleFriend(p.id)}>{p.name}</div>{selectedFriends.includes(p.id) && (<input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts[p.id] || ''} disabled={splitMode === 'equal'} onChange={e => setSplitAmounts({...splitAmounts, [p.id]: e.target.value})} />)}</div>))}</div>
+                            </div>}
+                            {tab === 'friend' && <><select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})}><option value="lent">Money Rented (I gave)</option><option value="borrowed">Money Taken (I took)</option><option value="repayment_in">He Paid Back</option><option value="repayment_out">I Paid Back</option></select><div className="flex gap-4 overflow-x-auto pb-2 hide-scroll">{people.map(p => (<div key={p.id} onClick={()=>setForm({...form, relatedPerson: p.id})} className="flex flex-col items-center gap-2 cursor-pointer group"><Avatar imageId={p.imageId} name={p.name} selected={form.relatedPerson === p.id} /><span className={`text-[10px] font-bold ${form.relatedPerson === p.id ? 'text-indigo-500':'text-slate-500'}`}>{p.name}</span></div>))}</div></>}
+                            <div className="flex gap-2"><button type="button" onClick={()=>setForm({...form, paymentMode:'Online'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Online'?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Online</button><button type="button" onClick={()=>setForm({...form, paymentMode:'Cash'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Cash'?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Cash</button></div>
                             {tab !== 'split' && <input type="number" placeholder="Amount" className="input-field text-xl font-bold" value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})} required />}
                             <input className="input-field" placeholder="Category" value={form.category} onChange={e=>setForm({...form, category:e.target.value})} required />
-                            <label className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.imageBase64 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    <i data-lucide={form.imageBase64 ? 'check' : 'camera'}></i>
-                                </div>
-                                <span className="text-sm text-slate-500">{form.imageBase64 ? 'Receipt Attached' : 'Attach Receipt'}</span>
-                                <input type="file" className="hidden" accept="image/*" onChange={handleImage} />
-                            </label>
+                            <label className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.imageBase64 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}><i data-lucide={form.imageBase64 ? 'check' : 'camera'}></i></div><span className="text-sm text-slate-500">{form.imageBase64 ? 'Receipt Attached' : 'Attach Receipt'}</span><input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label>
                             <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} required />
                             <button disabled={loading} className="btn-primary shadow-xl shadow-indigo-500/30 text-lg">{loading ? 'Saving...' : 'Save'}</button>
-                            {editItem && <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-bold bg-red-50 dark:bg-red-900/20 rounded-xl">Delete Entry</button>}
+                            {editItem && editItem.id && <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-bold bg-red-50 dark:bg-red-900/20 rounded-xl">Delete Entry</button>}
                         </form>
                     </div>
                 </div>
             );
         }
 
-        // --- NEW: SMART SEARCH PERSON MODAL ---
         function PersonModal({ user, onClose }) {
-            const [mode, setMode] = useState('search'); // 'search' | 'manual'
+            const [mode, setMode] = useState('search'); 
             const [query, setQuery] = useState('');
             const [results, setResults] = useState([]);
             const [loading, setLoading] = useState(false);
             const [manualForm, setManualForm] = useState({ name: '', phone: '', imageBase64: '' });
 
-            const handleSearch = async (e) => {
-                e.preventDefault(); setLoading(true);
-                try {
-                    const res = await fetch(`${API_URL}?action=searchUsers&userId=${user.id}&query=${query}`);
-                    const json = await res.json();
-                    if(json.success) setResults(json.results);
-                } catch(e) {}
-                setLoading(false);
-            };
-
-            const connectUser = async (targetUser) => {
-                setLoading(true);
-                await fetch(API_URL, { 
-                    method: 'POST', 
-                    body: JSON.stringify({ action: 'addPerson', userId: user.id, linkedUserId: targetUser.id, name: targetUser.name }) 
-                });
-                onClose();
-            };
-
-            const handleImage = (e) => {
-                const file = e.target.files[0];
-                if(file) compressImage(file).then(b64 => setManualForm({...manualForm, imageBase64: b64}));
-            };
-
-            const submitManual = async (e) => {
-                e.preventDefault(); setLoading(true);
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, ...manualForm }) });
-                onClose();
-            };
+            const handleSearch = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch(`${API_URL}?action=searchUsers&userId=${user.id}&query=${query}`); const json = await res.json(); if(json.success) setResults(json.results); } catch(e) {} setLoading(false); };
+            const connectUser = async (targetUser) => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, linkedUserId: targetUser.id, name: targetUser.name }) }); onClose(); };
+            const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setManualForm({...manualForm, imageBase64: b64})); };
+            const submitManual = async (e) => { e.preventDefault(); setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, ...manualForm }) }); onClose(); };
 
             return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 animate-up shadow-2xl h-[500px] flex flex-col">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg dark:text-white">{mode==='search'?'Find Friend':'Add Manual Reminder'}</h3>
-                            <button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button>
-                        </div>
-                        
+                        <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg dark:text-white">{mode==='search'?'Find Friend':'Add Manual Reminder'}</h3><button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button></div>
                         {mode === 'search' ? (
                             <div className="flex-1 flex flex-col">
-                                <form onSubmit={handleSearch} className="flex gap-2 mb-4">
-                                    <input className="input-field py-2" placeholder="Search by name..." value={query} onChange={e=>setQuery(e.target.value)} autoFocus />
-                                    <button className="bg-indigo-600 text-white p-3 rounded-xl"><i data-lucide="search" className="w-5 h-5"></i></button>
-                                </form>
-                                <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                                    {results.length === 0 && query && !loading && <p className="text-center text-slate-400 text-sm mt-4">No users found.</p>}
-                                    {results.map(r => (
-                                        <div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                                            <div className="flex items-center gap-3">
-                                                <Avatar imageId={r.imageId} name={r.name} size="sm" />
-                                                <span className="font-bold text-sm dark:text-white">{r.name}</span>
-                                            </div>
-                                            <button onClick={()=>connectUser(r)} disabled={loading} className="text-xs bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg font-bold">Connect</button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="text-center pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <p className="text-xs text-slate-400 mb-2">Can't find them?</p>
-                                    <button onClick={()=>setMode('manual')} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm">Add Manually (No Sync)</button>
-                                </div>
+                                <form onSubmit={handleSearch} className="flex gap-2 mb-4"><input className="input-field py-2" placeholder="Search by name..." value={query} onChange={e=>setQuery(e.target.value)} autoFocus /><button className="bg-indigo-600 text-white p-3 rounded-xl"><i data-lucide="search" className="w-5 h-5"></i></button></form>
+                                <div className="flex-1 overflow-y-auto space-y-2 mb-4">{results.map(r => (<div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl"><div className="flex items-center gap-3"><Avatar imageId={r.imageId} name={r.name} size="sm" /><span className="font-bold text-sm dark:text-white">{r.name}</span></div><button onClick={()=>connectUser(r)} disabled={loading} className="text-xs bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg font-bold">Connect</button></div>))}</div>
+                                <div className="text-center pt-4 border-t border-slate-100 dark:border-slate-800"><p className="text-xs text-slate-400 mb-2">Can't find them?</p><button onClick={()=>setMode('manual')} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm">Add Manually (No Sync)</button></div>
                             </div>
                         ) : (
-                            <form onSubmit={submitManual} className="flex-1 flex flex-col gap-4">
-                                <label className="block w-20 h-20 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-slate-200 transition">
-                                    {manualForm.imageBase64 ? <img src={manualForm.imageBase64} className="w-full h-full object-cover"/> : <i data-lucide="camera" className="text-slate-400 w-6 h-6"></i>}
-                                    <input type="file" className="hidden" accept="image/*" onChange={handleImage} />
-                                </label>
-                                <input className="input-field" placeholder="Name" value={manualForm.name} onChange={e=>setManualForm({...manualForm, name:e.target.value})} required />
-                                <input className="input-field" placeholder="Phone (Optional)" value={manualForm.phone} onChange={e=>setManualForm({...manualForm, phone:e.target.value})} />
-                                <div className="mt-auto flex gap-3">
-                                    <button type="button" onClick={()=>setMode('search')} className="flex-1 py-3 text-slate-500 font-bold">Back</button>
-                                    <button disabled={loading} className="flex-1 btn-primary shadow-lg">{loading ? '...' : 'Save'}</button>
-                                </div>
-                            </form>
+                            <form onSubmit={submitManual} className="flex-1 flex flex-col gap-4"><label className="block w-20 h-20 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-slate-200 transition">{manualForm.imageBase64 ? <img src={manualForm.imageBase64} className="w-full h-full object-cover"/> : <i data-lucide="camera" className="text-slate-400 w-6 h-6"></i>}<input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label><input className="input-field" placeholder="Name" value={manualForm.name} onChange={e=>setManualForm({...manualForm, name:e.target.value})} required /><input className="input-field" placeholder="Phone (Optional)" value={manualForm.phone} onChange={e=>setManualForm({...manualForm, phone:e.target.value})} /><div className="mt-auto flex gap-3"><button type="button" onClick={()=>setMode('search')} className="flex-1 py-3 text-slate-500 font-bold">Back</button><button disabled={loading} className="flex-1 btn-primary shadow-lg">{loading ? '...' : 'Save'}</button></div></form>
                         )}
                     </div>
                 </div>
             );
         }
 
-        // --- PROFILE VIEW ---
         function ProfileView({ user, onUpdate }) {
             const [form, setForm] = useState({ username: user.name, phone: user.phone, imageBase64: '' });
             const [loading, setLoading] = useState(false);
-            
-            const handleImage = (e) => {
-                const file = e.target.files[0];
-                if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64}));
-            };
-
-            const save = async () => {
-                setLoading(true);
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) });
-                onUpdate({ ...user, name: form.username, phone: form.phone });
-                setLoading(false); alert("Updated!");
-            };
+            const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); };
+            const save = async () => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) }); onUpdate({ ...user, name: form.username, phone: form.phone }); setLoading(false); alert("Updated!"); };
             return (
-                <div className="animate-fade space-y-8 p-2">
-                    <div className="flex flex-col items-center">
-                        <label className="relative cursor-pointer group">
-                            <Avatar imageId={user.imageId} name={user.name} size="lg" />
-                            <div className="absolute bottom-0 right-0 bg-indigo-600 rounded-full p-1 text-white"><i data-lucide="camera" className="w-4 h-4"></i></div>
-                            <input type="file" className="hidden" accept="image/*" onChange={handleImage} />
-                        </label>
-                        <p className="mt-4 text-sm text-slate-400 font-bold">{user.email}</p>
-                    </div>
-                    <input className="input-field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} placeholder="Name" />
-                    <input className="input-field" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} placeholder="Phone" />
-                    <button onClick={save} disabled={loading} className="btn-primary shadow-lg shadow-indigo-500/20">{loading?'...':'Update'}</button>
-                </div>
+                <div className="animate-fade space-y-8 p-2"><div className="flex flex-col items-center"><label className="relative cursor-pointer group"><Avatar imageId={user.imageId} name={user.name} size="lg" /><div className="absolute bottom-0 right-0 bg-indigo-600 rounded-full p-1 text-white"><i data-lucide="camera" className="w-4 h-4"></i></div><input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label><p className="mt-4 text-sm text-slate-400 font-bold">{user.email}</p></div><input className="input-field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} placeholder="Name" /><input className="input-field" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} placeholder="Phone" /><button onClick={save} disabled={loading} className="btn-primary shadow-lg shadow-indigo-500/20">{loading?'...':'Update'}</button></div>
+            );
+        }
+
+        function Auth({ onLogin }) {
+            const [view, setView] = useState('login');
+            const [form, setForm] = useState({ email: '', password: '', username: '', phone: '' });
+            const [loading, setLoading] = useState(false);
+            const [msg, setMsg] = useState(null);
+            const submit = async (e) => { e.preventDefault(); setLoading(true); setMsg(null); try { const url = view === 'login' ? `${API_URL}?action=login&email=${form.email}&password=${form.password}` : API_URL; const opts = view === 'login' ? {} : { method: 'POST', body: JSON.stringify({ action: view, ...form }) }; const res = await fetch(url, opts); const json = await res.json(); if(json.success) { if(view === 'login') onLogin(json.user); else { setMsg({type:'s', text:'Success! Login now.'}); setView('login'); } } else setMsg({type:'e', text: json.error}); } catch(e) { setMsg({type:'e', text: "Connection Error"}); } setLoading(false); };
+            return (
+                <div className="h-full flex items-center justify-center p-6 bg-slate-100 dark:bg-slate-900"><div className="w-full max-w-sm bg-white dark:bg-slate-950 p-8 rounded-[2rem] shadow-2xl animate-up"><h1 className="text-3xl font-bold text-center mb-2">FinanceMax</h1>{msg && <div className={`p-3 rounded-xl text-center text-sm mb-4 font-bold ${msg.type==='e'?'bg-red-50 text-red-500':'bg-emerald-50 text-emerald-600'}`}>{msg.text}</div>}<form onSubmit={submit} className="space-y-4 mt-6">{view==='signup' && (<><input className="input-field" placeholder="Username" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} required /><input className="input-field" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} /></>)}<input className="input-field" placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} required /><input type="password" className="input-field" placeholder="Password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} required /><button disabled={loading} className="btn-primary shadow-xl shadow-indigo-500/30">{loading ? <div className="loader mx-auto"></div> : (view==='login'?'Login':'Sign Up')}</button></form><button onClick={()=>setView(view==='login'?'signup':'login')} className="w-full mt-6 text-sm text-slate-400 hover:text-indigo-500">{view==='login'?'Create Account':'Back to Login'}</button></div></div>
             );
         }
 
         function App() {
             const [user, setUser] = useState(null);
-            
-            useEffect(() => {
-                const saved = localStorage.getItem('fm_plat_user');
-                if(saved) setUser(JSON.parse(saved));
-            }, []);
-
-            const handleLogin = (u) => {
-                setUser(u);
-                localStorage.setItem('fm_plat_user', JSON.stringify(u));
-            };
-            const handleLogout = () => {
-                setUser(null);
-                localStorage.removeItem('fm_plat_user');
-            };
-
+            useEffect(() => { const saved = localStorage.getItem('fm_plat_user'); if(saved) setUser(JSON.parse(saved)); }, []);
+            const handleLogin = (u) => { setUser(u); localStorage.setItem('fm_plat_user', JSON.stringify(u)); };
+            const handleLogout = () => { setUser(null); localStorage.removeItem('fm_plat_user'); };
             return user ? <Dashboard user={user} onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />;
         }
 
