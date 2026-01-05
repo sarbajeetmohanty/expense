@@ -60,7 +60,7 @@
         // ==========================================
         // 🔴 PASTE YOUR BACKEND URL HERE 🔴
         // ==========================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbwXbh0_7jrRSP8V9AMpikca6f_58-MFr30iashS8DHQncgu2pix1r1qMLXf5CjyHLI/exec"; 
+        const API_URL = "https://script.google.com/macros/s/AKfycbwe7Dz5o-FVPcN-0H3zVdZ6SSpZJwqr2Dl7KEPMWWnFhX50rTUclQAXle6jGZbfMvo/exec"; 
         // ==========================================
 
         const { useState, useEffect, useMemo } = React;
@@ -149,6 +149,7 @@
             const [darkMode, setDarkMode] = useState(true);
             const [modal, setModal] = useState(null); 
             const [editItem, setEditItem] = useState(null); 
+            const [rejectedItems, setRejectedItems] = useState([]);
             const [currentUser, setCurrentUser] = useState(user);
 
             useEffect(() => {
@@ -156,7 +157,7 @@
                 fetchData();
             }, [darkMode]);
 
-            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data]);
+            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data, rejectedItems]);
 
             const fetchData = async () => {
                 setLoading(true);
@@ -166,13 +167,27 @@
                     if(json.success) {
                         setData({ transactions: json.transactions, people: json.people });
                         if(json.userProfile) setCurrentUser(json.userProfile);
+                        
+                        // Check for rejected items created by me
+                        const rejected = json.transactions.filter(t => t.userId === currentUser.id && t.status === 'Rejected');
+                        if (rejected.length > 0) setRejectedItems(rejected);
                     }
                 } catch(e) {}
                 setLoading(false);
             };
 
+            const handleApproval = async (t, status) => {
+                if(!confirm(`${status} this transaction?`)) return;
+                setLoading(true);
+                await fetch(API_URL, { 
+                    method: 'POST', 
+                    body: JSON.stringify({ action: 'handleApproval', transactionId: t.id, status: status }) 
+                });
+                fetchData();
+            };
+
             const removePerson = async (p) => {
-                if(!confirm(`Are you sure you want to remove ${p.name}?`)) return;
+                if(!confirm(`Remove ${p.name}?`)) return;
                 setLoading(true);
                 try {
                     const res = await fetch(API_URL, {
@@ -188,16 +203,14 @@
 
             const openEdit = (item) => { setEditItem(item); setModal('add'); };
 
-            // --- OPTIMIZED STATS LOGIC ---
+            // --- STATS LOGIC (Only Confirmed Transactions) ---
             const stats = useMemo(() => {
                 let cashBal=0, onlineBal=0, rented=0, taken=0;
                 const graph = {};
                 
-                // Helper to map type for Synced Transactions (Global Stats)
                 const getEffectiveType = (t) => {
                     const isMine = t.userId === currentUser.id;
                     if (isMine) return t.type;
-                    
                     if (t.type === 'lent') return 'borrowed';
                     if (t.type === 'borrowed') return 'lent';
                     if (t.type === 'repayment_in') return 'repayment_out';
@@ -205,8 +218,9 @@
                     return t.type;
                 };
 
-                // 1. Calculate Global Cashflow (Home Screen)
                 data.transactions.forEach(t => {
+                    if (t.status !== 'Confirmed') return; // Skip Pending/Rejected
+
                     const type = getEffectiveType(t);
                     const amt = t.amount;
 
@@ -222,37 +236,26 @@
                     if(['income','borrowed','repayment_in'].includes(type)) graph[d].val+=amt; else graph[d].val-=amt;
                 });
 
-                // 2. Calculate Per-Friend Net Balance (Friends Screen)
                 const peopleStats = data.people.map(p => {
                     let net = 0;
                     data.transactions.forEach(t => {
+                        if (t.status !== 'Confirmed') return;
+
                         const isMine = t.userId === currentUser.id;
                         const friendEmail = p.email ? p.email.toLowerCase() : "";
                         const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
 
-                        // A. Transactions I Created (Linked to this Friend ID)
                         if (isMine && t.relatedPerson === p.id) {
-                            if(t.type === 'lent') net += t.amount;          // I lent = (+ Net)
-                            if(t.type === 'repayment_in') net -= t.amount;  // I got paid = (- Net)
-                            if(t.type === 'borrowed') net -= t.amount;      // I borrowed = (- Net)
-                            if(t.type === 'repayment_out') net += t.amount; // I paid back = (+ Net)
+                            if(t.type === 'lent') net += t.amount;
+                            if(t.type === 'repayment_in') net -= t.amount;
+                            if(t.type === 'borrowed') net -= t.amount;
+                            if(t.type === 'repayment_out') net += t.amount;
                         }
                         
-                        // B. Transactions THEY Created (Synced via Email)
-                        // Logic: I didn't create it, but the Creator is THIS friend (via email check)
                         if (!isMine && creatorEmail === friendEmail) {
-                            // If they say "Lent" (to me), then I "Borrowed" -> (- Net)
                             if(t.type === 'lent') net -= t.amount;
-                            
-                            // If they say "Borrowed" (from me), then I "Lent" -> (+ Net)
                             if(t.type === 'borrowed') net += t.amount; 
-                            
-                            // If they say "Repayment In" (They received money from me), I paid them.
-                            // My debt decreases (or credit increases). So (+ Net).
                             if(t.type === 'repayment_in') net += t.amount; 
-                            
-                            // If they say "Repayment Out" (They paid me), I received money.
-                            // My credit decreases. So (- Net).
                             if(t.type === 'repayment_out') net -= t.amount; 
                         }
                     });
@@ -261,6 +264,9 @@
 
                 return { cashBal, onlineBal, total: cashBal+onlineBal, rented, taken, graph: Object.values(graph).sort((a,b)=>new Date(a.date)-new Date(b.date)), peopleStats };
             }, [data.transactions, currentUser.id]);
+
+            // Filter Requests (Incoming & Pending)
+            const requests = data.transactions.filter(t => t.userId !== currentUser.id && t.status === 'Pending');
 
             return (
                 <div className="h-full w-full flex flex-col bg-slate-50 dark:bg-slate-950">
@@ -299,30 +305,68 @@
                             </div>
                         )}
 
+                        {view === 'requests' && (
+                            <div className="space-y-4 animate-fade">
+                                <h2 className="text-xl font-bold dark:text-white px-2">Pending Requests</h2>
+                                {requests.length === 0 && <p className="text-center text-slate-400 mt-10">No pending requests.</p>}
+                                {requests.map(t => {
+                                    // Inverse logic for display: If they Lent, I Borrowed
+                                    let type = t.type;
+                                    if(type === 'lent') type = 'borrowed';
+                                    else if(type === 'borrowed') type = 'lent';
+                                    else if(type === 'repayment_in') type = 'repayment_out';
+                                    else if(type === 'repayment_out') type = 'repayment_in';
+
+                                    return (
+                                        <div key={t.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200 dark:border-indigo-900 shadow-sm">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <p className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">{t.creatorEmail}</p>
+                                                    <p className="font-bold dark:text-white text-lg">{t.category}</p>
+                                                    <p className="text-slate-400 text-sm">{t.description}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="font-bold text-xl block dark:text-white">{formatMoney(t.amount)}</span>
+                                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${type==='borrowed'?'bg-amber-100 text-amber-600':'bg-blue-100 text-blue-600'}`}>{type === 'borrowed' ? 'You Owe' : 'They Owe'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <button onClick={()=>handleApproval(t, 'Rejected')} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold border border-red-100 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50">Reject</button>
+                                                <button onClick={()=>handleApproval(t, 'Confirmed')} className="flex-1 py-3 rounded-xl bg-emerald-50 text-emerald-600 font-bold border border-emerald-100 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/50">Approve</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
                         {view === 'history' && (
                             <div className="space-y-4 animate-fade">
                                 <h2 className="text-xl font-bold dark:text-white px-2">Transactions</h2>
                                 {data.transactions.map(t => {
                                     const isMine = t.userId === currentUser.id;
                                     let effectiveType = t.type;
-                                    let displayType = t.type;
                                     
                                     if(!isMine) {
                                         if (t.type === 'lent') effectiveType = 'borrowed';
                                         else if (t.type === 'borrowed') effectiveType = 'lent';
                                         else if (t.type === 'repayment_in') effectiveType = 'repayment_out';
                                         else if (t.type === 'repayment_out') effectiveType = 'repayment_in';
-                                        displayType = effectiveType;
                                     }
 
                                     return (
                                         <div key={t.id} onClick={() => isMine ? openEdit(t) : alert("Synced Transaction. Cannot edit.")} className={`flex justify-between items-center p-4 bg-white dark:bg-slate-900 rounded-2xl border ${!isMine ? 'border-dashed border-indigo-300 dark:border-indigo-800' : 'border-slate-200 dark:border-slate-800'} shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition`}>
                                             <div className="flex gap-4 items-center">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${displayType.includes('income')?'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':displayType.includes('expense')?'bg-red-50 text-red-600 dark:bg-red-900/20':'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}>
-                                                    <i data-lucide={displayType==='income'?'arrow-down':displayType==='expense'?'arrow-up':'refresh-cw'} className="w-5 h-5"></i>
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${effectiveType.includes('income')?'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':effectiveType.includes('expense')?'bg-red-50 text-red-600 dark:bg-red-900/20':'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}>
+                                                    <i data-lucide={effectiveType==='income'?'arrow-down':effectiveType==='expense'?'arrow-up':'refresh-cw'} className="w-5 h-5"></i>
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="font-bold text-sm dark:text-white truncate">{t.category} {!isMine && <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1 rounded ml-1">SYNC</span>}</p>
+                                                    <p className="font-bold text-sm dark:text-white truncate">
+                                                        {t.category} 
+                                                        {!isMine && <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1 rounded ml-1">SYNC</span>}
+                                                        {t.status === 'Pending' && <span className="text-[10px] text-amber-500 bg-amber-50 px-1 rounded ml-1">PENDING</span>}
+                                                        {t.status === 'Rejected' && <span className="text-[10px] text-red-500 bg-red-50 px-1 rounded ml-1">REJECTED</span>}
+                                                    </p>
                                                     <div className="flex items-center gap-1">
                                                         <p className="text-xs text-slate-500 font-medium">{t.date.split('T')[0]} • {t.paymentMode}</p>
                                                         {t.imageId && <i data-lucide="paperclip" className="w-3 h-3 text-indigo-500"></i>}
@@ -331,7 +375,7 @@
                                             </div>
                                             <div className="text-right shrink-0">
                                                 <span className="font-bold block dark:text-white text-lg">{formatMoney(t.amount)}</span>
-                                                <span className="text-[10px] font-bold uppercase text-slate-400">{displayType==='income'?'In':displayType==='expense'?'Out':displayType==='borrowed'?'Debt':'Lent'}</span>
+                                                <span className="text-[10px] font-bold uppercase text-slate-400">{effectiveType==='income'?'In':effectiveType==='expense'?'Out':effectiveType==='borrowed'?'Debt':'Lent'}</span>
                                             </div>
                                         </div>
                                     );
@@ -371,12 +415,42 @@
                     <button onClick={()=>{setEditItem(null); setModal('add');}} className="absolute bottom-24 right-6 w-16 h-16 bg-indigo-600 text-white rounded-full shadow-xl shadow-indigo-500/40 flex items-center justify-center z-30 transition-transform active:scale-90"><i data-lucide="plus" className="w-8 h-8"></i></button>
 
                     <div className="absolute bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-3 flex justify-between items-center z-40 pb-safe">
-                        {['home','history','people','profile'].map(v => (
+                        {['home','history','people','requests','profile'].map(v => (
                             <button key={v} onClick={()=>setView(v)} className={`flex flex-col items-center gap-1 transition-all ${view===v?'text-indigo-600 scale-110':'text-slate-400 dark:text-slate-600'}`}>
-                                <i data-lucide={v==='home'?'home':v==='history'?'list':v==='people'?'users':'user'} className={`w-6 h-6 ${view===v && 'fill-indigo-500/10'}`}></i>
+                                <div className="relative">
+                                    <i data-lucide={v==='home'?'home':v==='history'?'list':v==='people'?'users':v==='requests'?'bell':'user'} className={`w-6 h-6 ${view===v && 'fill-indigo-500/10'}`}></i>
+                                    {v==='requests' && requests.length > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>}
+                                </div>
                             </button>
                         ))}
                     </div>
+
+                    {rejectedItems.length > 0 && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 animate-up shadow-2xl text-center">
+                                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="alert-circle" className="w-8 h-8"></i></div>
+                                <h3 className="font-bold text-xl dark:text-white mb-2">Request Rejected</h3>
+                                <p className="text-slate-500 text-sm mb-6">Your transaction "{rejectedItems[0].description}" of {formatMoney(rejectedItems[0].amount)} was rejected by the friend.</p>
+                                <div className="flex gap-3">
+                                    <button onClick={()=>{
+                                        if(confirm("Delete this rejected record?")) {
+                                            fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})}).then(()=>fetchData());
+                                            setRejectedItems(prev => prev.slice(1));
+                                        }
+                                    }} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold">Delete</button>
+                                    <button onClick={()=>{
+                                        // Open Edit Modal to "Resend" (User saves -> creates new request)
+                                        setEditItem(rejectedItems[0]); 
+                                        setModal('add');
+                                        // Also delete the old rejected one silently to clean up? Or keep it? 
+                                        // Better UX: Delete old one immediately so "Save" creates fresh pending one.
+                                        fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})});
+                                        setRejectedItems(prev => prev.slice(1));
+                                    }} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow-lg">Resend</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {modal === 'add' && <TransactionModal user={currentUser} people={data.people} editItem={editItem} onClose={()=>{setModal(null); fetchData();}} />}
                     {modal === 'person' && <PersonModal user={currentUser} onClose={()=>{setModal(null); fetchData();}} />}
