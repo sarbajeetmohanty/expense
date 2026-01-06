@@ -154,9 +154,9 @@
             return allowed.includes(nextState);
         };
         
-        // FINANCIAL CORRECTNESS: Balance mutation only allowed for Confirmed transactions
+        // FIXED: Balance mutation allowed for Approved, Marked as Paid, and Confirmed transactions
         const canMutateBalances = (status) => {
-            return status === 'Confirmed';
+            return ['Approved', 'Marked as Paid', 'Confirmed'].includes(status);
         };
         
         // ENHANCED CATEGORY NORMALIZATION SYSTEM
@@ -670,6 +670,7 @@
                 link.click();
             };
             
+            // FIXED: Balance calculation logic
             const stats = useMemo(() => {
                 let cashBal = 0, onlineBal = 0, asset = 0, liability = 0, income = 0, expense = 0;
                 const graph = {}; 
@@ -700,38 +701,69 @@
                                 catMap[normalizedCategory] = (catMap[normalizedCategory]||0)+amt;
                             }
                             else if (t.type === 'lent') {
+                                // When I lend money, my cash/online balance decreases
                                 t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt;
                                 asset += amt; 
                                 graph[d].val -= amt;
                             }
                             else if (t.type === 'borrowed') {
+                                // When I borrow money, my cash/online balance increases
                                 t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt;
                                 liability += amt; 
                                 graph[d].val += amt;
                             }
                             else if (t.type === 'repayment_in') {
+                                // When I receive repayment, my cash/online balance increases
                                 t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt;
                                 asset -= amt; 
                                 graph[d].val += amt;
                             }
                             else if (t.type === 'repayment_out') {
+                                // When I repay someone, my cash/online balance decreases
                                 t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt;
                                 liability -= amt; 
                                 graph[d].val -= amt;
                             }
                         }
                     } else {
+                        // Transactions created by others that affect me
                         if (canAffectBalances) {
-                            if (t.type === 'lent') liability += amt;
-                            else if (t.type === 'borrowed') asset += amt;
-                            else if (t.type === 'repayment_in') liability -= amt;
-                            else if (t.type === 'repayment_out') asset -= amt;
+                            if (t.type === 'lent') {
+                                // Someone lent me money - I owe them (liability)
+                                liability += amt;
+                                // My cash/online balance should increase
+                                t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt;
+                                graph[d].val += amt;
+                            }
+                            else if (t.type === 'borrowed') {
+                                // Someone borrowed from me - they owe me (asset)
+                                asset += amt;
+                                // My cash/online balance should decrease
+                                t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt;
+                                graph[d].val -= amt;
+                            }
+                            else if (t.type === 'repayment_in') {
+                                // Someone repaid me - my asset decreases
+                                asset -= amt;
+                                // My cash/online balance should increase
+                                t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt;
+                                graph[d].val += amt;
+                            }
+                            else if (t.type === 'repayment_out') {
+                                // Someone received repayment from me - my liability decreases
+                                liability -= amt;
+                                // My cash/online balance should decrease
+                                t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt;
+                                graph[d].val -= amt;
+                            }
                         }
                     }
                 });
                 
+                // Ensure asset and liability are non-negative
                 asset = Math.max(0, asset);
                 liability = Math.max(0, liability);
+                
                 const pieData = Object.keys(catMap).map((k,i) => ({ 
                     name: k, 
                     value: fromCents(catMap[k]), 
@@ -754,26 +786,26 @@
                         if (t.status === 'Rejected' || t.status === 'Deleted') return;
                         
                         const isMine = t.userId === currentUser.id;
-                        if (!isMine && t.status === 'Pending') return;
+                        const canAffectBalances = canMutateBalances(t.status);
                         
                         const friendEmail = p.email ? p.email.toLowerCase() : "";
                         const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
                         const amt = toCents(t.amount);
                         
                         if (isMine && t.relatedPerson === p.id) {
-                            if (canMutateBalances(t.status)) {
-                                if(t.type === 'lent') net += amt;
-                                if(t.type === 'repayment_in') net -= amt;
-                                if(t.type === 'borrowed') net -= amt;
-                                if(t.type === 'repayment_out') net += amt;
+                            if (canAffectBalances) {
+                                if(t.type === 'lent') net += amt; // I lent them money - they owe me
+                                if(t.type === 'repayment_in') net -= amt; // They repaid me
+                                if(t.type === 'borrowed') net -= amt; // I borrowed from them - I owe them
+                                if(t.type === 'repayment_out') net += amt; // I repaid them
                             }
                         }
                         if (!isMine && creatorEmail === friendEmail) {
-                            if (canMutateBalances(t.status)) {
-                                if(t.type === 'lent') net -= amt;
-                                if(t.type === 'borrowed') net += amt;
-                                if(t.type === 'repayment_in') net += amt;
-                                if(t.type === 'repayment_out') net -= amt;
+                            if (canAffectBalances) {
+                                if(t.type === 'lent') net -= amt; // They lent me money - I owe them
+                                if(t.type === 'borrowed') net += amt; // They borrowed from me - they owe me
+                                if(t.type === 'repayment_in') net += amt; // They received repayment from me
+                                if(t.type === 'repayment_out') net -= amt; // They repaid me
                             }
                         }
                     });
@@ -783,7 +815,7 @@
                 return {
                     cashBal: fromCents(cashBal),
                     onlineBal: fromCents(onlineBal),
-                    total: fromCents(cashBal+onlineBal),
+                    total: fromCents(cashBal + onlineBal),
                     rented: fromCents(asset),
                     taken: fromCents(liability),
                     insight,
@@ -888,6 +920,7 @@
             
             const filteredHistory = filterTransactions(data.transactions);
             
+            // FIXED: History summary calculation
             const historySummary = useMemo(() => {
                 let inc = 0, out = 0;
                 filteredHistory.forEach(t => {
@@ -900,8 +933,11 @@
                         if (['income', 'borrowed', 'repayment_in'].includes(t.type)) inc += amt;
                         else if (['expense', 'lent', 'repayment_out'].includes(t.type)) out += amt;
                     } else {
-                        if (['borrowed', 'repayment_in'].includes(t.type)) inc += amt;
-                        else if (['lent', 'repayment_out'].includes(t.type)) out += amt;
+                        // For transactions created by others
+                        if (t.type === 'lent') inc += amt; // They lent me money - money coming in
+                        else if (t.type === 'borrowed') out += amt; // They borrowed from me - money going out
+                        else if (t.type === 'repayment_in') out += amt; // They received repayment - money going out
+                        else if (t.type === 'repayment_out') inc += amt; // They repaid me - money coming in
                     }
                 });
                 return { in: fromCents(inc), out: fromCents(out) };
@@ -1941,7 +1977,7 @@
                             const statusForFriend = (friend && friend.email) ? 'Pending' : 'Confirmed';
                             items.push({
                                 ...form,
-                                type: 'borrowed',
+                                type: 'borrowed', // This should be 'borrowed' since they owe me
                                 amount: parseFloat(splitAmt),
                                 description: `${form.description || 'Split Bill'} (Split Bill with ${friend?.name || 'Friend'})`,
                                 relatedPerson: id,
