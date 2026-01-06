@@ -533,8 +533,14 @@
                     return;
                 }
                 
+                let title = 'Update Transaction?';
+                if (status === 'Approved') title = 'Approve Transaction?';
+                else if (status === 'Rejected') title = 'Reject Transaction?';
+                else if (status === 'Marked as Paid') title = 'Mark as Paid?';
+                else if (status === 'Confirmed') title = 'Confirm Transaction?';
+                
                 confirmAction(
-                    status === 'Confirmed' ? 'Approve Transaction?' : 'Reject Transaction?',
+                    title,
                     `This will update your financial records.`,
                     async () => {
                         const prevStatus = t.status;
@@ -570,7 +576,8 @@
                     `This will ${status === 'Confirmed' ? 'update balances' : 'return to approved state'}.`,
                     async () => {
                         const prevStatus = t.status;
-                        await optimisticMutate({ action: 'handlePaymentConfirmation', transactionId: t.id, status: status },
+                        // Use handleApproval backend action for all status updates
+                        await optimisticMutate({ action: 'handleApproval', transactionId: t.id, status: status, previousStatus: prevStatus },
                             () => {
                                 setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === t.id ? { ...tr, status } : tr) }));
                             },
@@ -1332,21 +1339,21 @@
                                 <h3 className="font-bold text-xl dark:text-white mb-2">Request Rejected</h3>
                                 <p className="text-slate-500 text-sm mb-6">Your transaction "{rejectedItems[0].description}" of {formatMoney(rejectedItems[0].amount)} was rejected.</p>
                                 <div className="flex gap-3">
-                                    <button onClick={()=>{confirmAction('Delete Record?', 'This will permanently delete this rejected request.', ()=>{ mutate({ action:'delete', id:rejectedItems[0].id, userId:currentUser.id }).then(json => { if(!json || json.success === false) alert(json?.error || 'Error'); setRejectedItems(prev => prev.slice(1)); }); }, 'danger', theme);}} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold">Delete</button>
+                                    <button onClick={()=>{confirmAction('Delete Record?', 'This will permanently delete this rejected request.', ()=>{ mutate({ action:'delete', id:rejectedItems[0].id, userId:currentUser.id }).then(json => { if(!json || json.success === false) alert(json?.error || 'Error'); setRejectedItems(prev => prev.slice(1)); }); }, 'danger');}} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold">Delete</button>
                                     <button onClick={async ()=>{ const { id, status, ...retryData } = rejectedItems[0]; if(retryData.date) retryData.date = retryData.date.split('T')[0]; try { setLoading(true); const json = await mutate({ action:'delete', id:rejectedItems[0].id, userId:currentUser.id }); if(json && json.success) { setEditItem(retryData); setModal('add'); setRejectedItems(prev => prev.slice(1)); } else { alert(json?.error || 'Error'); } } catch (e) { alert('Error'); } finally { setLoading(false); } }} className={`flex-1 py-3 rounded-xl text-white font-bold shadow-lg ${THEMES[theme].class}`}>Retry</button>
                                 </div>
                             </div>
                         </div>
                     )}
                    
-                    {modal === 'add' && <TransactionModal user={currentUser} people={data.people} editItem={editItem} onClose={()=>{setModal(null); fetchData(lastFetchParams);}} theme={theme} mutate={mutate} /> }
+                    {modal === 'add' && <TransactionModal user={currentUser} people={data.people} editItem={editItem} onClose={()=>{setModal(null); fetchData(lastFetchParams);}} theme={theme} mutate={mutate} setData={setData} data={data} fetchData={fetchData} lastFetchParams={lastFetchParams} setDialog={setDialog} /> }
                     {modal === 'person' && <PersonModal user={currentUser} onClose={()=>{setModal(null); fetchData(lastFetchParams);}} theme={theme} mutate={mutate} /> }
                 </div>
             );
         }
         
         // FIXED: Enhanced Transaction Modal with Smart Split Logic
-        function TransactionModal({ user, people, editItem, onClose, theme, mutate }) {
+        function TransactionModal({ user, people, editItem, onClose, theme, mutate, setData, data, fetchData, lastFetchParams, setDialog }) {
             const [tab, setTab] = useState(editItem ? (['lent','borrowed','repayment_in','repayment_out'].includes(editItem.type)?'friend':'simple') : 'simple');
             const [splitMode, setSplitMode] = useState('equal');
             const [includeMe, setIncludeMe] = useState(true);
@@ -1545,12 +1552,76 @@
                 e.preventDefault();
                 setLoading(true);
                 
+                // VALIDATION: Check required fields
+                if (tab === 'simple') {
+                    if (!form.amount || parseFloat(form.amount) <= 0) {
+                        alert('Please enter a valid amount greater than 0');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.category || form.category.trim() === '') {
+                        alert('Please enter a category');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.date) {
+                        alert('Please select a date');
+                        setLoading(false);
+                        return;
+                    }
+                }
+                
+                if (tab === 'friend') {
+                    if (!form.amount || parseFloat(form.amount) <= 0) {
+                        alert('Please enter a valid amount greater than 0');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.relatedPerson) {
+                        alert('Please select a friend');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.category || form.category.trim() === '') {
+                        alert('Please enter a category');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.date) {
+                        alert('Please select a date');
+                        setLoading(false);
+                        return;
+                    }
+                }
+                
                 // FINANCIAL CORRECTNESS: Validate split sum equals total
-                if (tab === 'split' && !isSplitValid) {
-                    if (splitError) alert(splitError);
-                    else alert(`Split total (${formatMoney(fromCents(sumSplitsCents))}) does not match bill amount (${formatMoney(fromCents(totalBillCents))}). Difference: ${formatMoney(fromCents(remainingCents))}`);
-                    setLoading(false);
-                    return;
+                if (tab === 'split') {
+                    if (!form.totalBill || parseFloat(form.totalBill) <= 0) {
+                        alert('Please enter a valid total bill amount');
+                        setLoading(false);
+                        return;
+                    }
+                    if (selectedFriends.length === 0 && !includeMe) {
+                        alert('Please select at least one participant');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!isSplitValid) {
+                        if (splitError) alert(splitError);
+                        else alert(`Split total (${formatMoney(fromCents(sumSplitsCents))}) does not match bill amount (${formatMoney(fromCents(totalBillCents))}). Difference: ${formatMoney(fromCents(remainingCents))}`);
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.category || form.category.trim() === '') {
+                        alert('Please enter a category');
+                        setLoading(false);
+                        return;
+                    }
+                    if (!form.date) {
+                        alert('Please select a date');
+                        setLoading(false);
+                        return;
+                    }
                 }
                 
                 let body = {};
@@ -1560,34 +1631,45 @@
                     const items = [];
                    
                     // Create Payer Share (Confirmed Expense)
-                    if(includeMe && splitAmounts['me'] > 0) {
+                    if(includeMe && splitAmounts['me'] && parseFloat(splitAmounts['me']) > 0) {
                         items.push({
                             ...form,
                             type: 'expense',
                             amount: parseFloat(splitAmounts['me']),
-                            description: `${form.description} (My Share)`,
+                            description: `${form.description || 'Split Bill'} (My Share)`,
                             relatedPerson: '',
-                            status: 'Confirmed' // Payer's share is immediately confirmed
+                            status: 'Confirmed', // Payer's share is immediately confirmed
+                            paymentMode: form.paymentMode || 'Online',
+                            date: form.date,
+                            category: form.category || 'General'
                         });
                     }
                    
                     // Create Friend Shares (Friends owe me money - they borrowed from me)
                     selectedFriends.forEach(id => {
-                        if(splitAmounts[id] > 0) {
+                        const splitAmt = splitAmounts[id];
+                        if(splitAmt && parseFloat(splitAmt) > 0) {
                             const friend = people.find(p => p.id === id);
                             const statusForFriend = (friend && friend.email) ? 'Pending' : 'Confirmed'; // auto-confirm for manual friends (no email)
                             items.push({
                                 ...form,
                                 type: 'borrowed', // Friend borrowed from me
-                                amount: parseFloat(splitAmounts[id]),
-                                description: `${form.description} (Split Bill with ${friend?.name || 'Friend'})`,
+                                amount: parseFloat(splitAmt),
+                                description: `${form.description || 'Split Bill'} (Split Bill with ${friend?.name || 'Friend'})`,
                                 relatedPerson: id,
-                                status: statusForFriend
+                                status: statusForFriend,
+                                paymentMode: form.paymentMode || 'Online',
+                                date: form.date,
+                                category: form.category || 'General'
                             });
                         }
                     });
                    
-                    if(items.length === 0) { alert("Invalid split"); setLoading(false); return; }
+                    if(items.length === 0) { 
+                        alert("Invalid split: No valid amounts to split"); 
+                        setLoading(false); 
+                        return; 
+                    }
                     body = { action: 'batchAdd', userId: user.id, items };
                 } else {
                     // FINANCIAL CORRECTNESS: Set appropriate status based on transaction type
@@ -1597,12 +1679,20 @@
                         status = (target && target.email) ? 'Pending' : 'Confirmed'; // auto-confirm if friend is manual/unlinked
                     }
                     
+                    // Validate amount is valid number
+                    const amountValue = parseFloat(form.amount);
+                    if (isNaN(amountValue) || amountValue <= 0) {
+                        alert('Please enter a valid amount greater than 0');
+                        setLoading(false);
+                        return;
+                    }
+                    
                     body = { 
                         action: isUpdate ? 'update' : 'add', 
                         id: isUpdate ? editItem.id : undefined, 
                         userId: user.id, 
                         ...form,
-                        amount: parseFloat(form.amount) || 0,
+                        amount: amountValue,
                         status: isUpdate ? (editItem.status || status) : status
                     };
                 }
@@ -1612,56 +1702,87 @@
                         // Optimistic update for add/update
                         if (body.action === 'add') {
                             const tmpId = 'tmp_' + Date.now();
-                            const tmpItem = { ...form, id: tmpId, userId: user.id, status: body.status || 'Confirmed' };
+                            const tmpItem = { ...form, id: tmpId, userId: user.id, status: body.status || 'Confirmed', amount: body.amount };
                             // insert at top
-                            setData(prev => ({ ...prev, transactions: [tmpItem, ...prev.transactions] }));
+                            setData(prev => ({ ...prev, transactions: [tmpItem, ...(prev.transactions || [])] }));
                             onClose();
                             try {
                                 const json = await mutate(body, { skipFetch: true });
                                 if (json && json.success === false) {
                                     // remove tmp
-                                    setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== tmpId) }));
+                                    setData(prev => ({ ...prev, transactions: (prev.transactions || []).filter(tr => tr.id !== tmpId) }));
                                     alert(json.error || 'Error saving transaction');
+                                    setLoading(false);
                                 } else {
                                     // optionally refresh in background
-                                    fetchData(lastFetchParams);
+                                    if (fetchData && lastFetchParams !== undefined) {
+                                        fetchData(lastFetchParams);
+                                    }
+                                    setLoading(false);
                                 }
                             } catch (e) {
-                                setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== tmpId) }));
-                                alert('Error saving transaction');
-                            } finally { setLoading(false); }
+                                setData(prev => ({ ...prev, transactions: (prev.transactions || []).filter(tr => tr.id !== tmpId) }));
+                                alert('Error saving transaction: ' + (e.message || 'Network error'));
+                                setLoading(false);
+                            }
                             return;
                         }
                         if (body.action === 'update') {
                             // optimistic update local item
-                            const prevItem = data.transactions.find(x => x.id === body.id);
-                            setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? { ...tr, ...body, amount: body.amount } : tr) }));
+                            const prevItem = (data && data.transactions) ? data.transactions.find(x => x.id === body.id) : null;
+                            setData(prev => ({ 
+                                ...prev, 
+                                transactions: (prev.transactions || []).map(tr => tr.id === body.id ? { ...tr, ...body, amount: body.amount } : tr) 
+                            }));
                             onClose();
                             try {
                                 const json = await mutate(body, { skipFetch: true });
                                 if (json && json.success === false) {
                                     // rollback
-                                    setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? prevItem : tr) }));
+                                    if (prevItem) {
+                                        setData(prev => ({ ...prev, transactions: (prev.transactions || []).map(tr => tr.id === body.id ? prevItem : tr) }));
+                                    }
                                     alert(json.error || 'Error updating transaction');
+                                    setLoading(false);
                                 } else {
-                                    fetchData(lastFetchParams);
+                                    if (fetchData && lastFetchParams !== undefined) {
+                                        fetchData(lastFetchParams);
+                                    }
+                                    setLoading(false);
                                 }
                             } catch (e) {
-                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? prevItem : tr) }));
-                                alert('Error updating transaction');
-                            } finally { setLoading(false); }
+                                if (prevItem) {
+                                    setData(prev => ({ ...prev, transactions: (prev.transactions || []).map(tr => tr.id === body.id ? prevItem : tr) }));
+                                }
+                                alert('Error updating transaction: ' + (e.message || 'Network error'));
+                                setLoading(false);
+                            }
                             return;
                         }
 
-                        // Fallback: default mutate behavior
+                        // Fallback: default mutate behavior (for batchAdd)
                         const json = await mutate(body);
-                        if (json && json.success === false) { alert(json.error || 'Error saving transaction'); setLoading(false); return; }
+                        if (json && json.success === false) { 
+                            alert(json.error || 'Error saving transaction'); 
+                            setLoading(false); 
+                            return; 
+                        }
+                        onClose();
+                        setLoading(false);
                     } else {
-                        await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
+                        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
+                        const json = await res.json();
+                        if (json && json.success === false) {
+                            alert(json.error || 'Error saving transaction');
+                            setLoading(false);
+                            return;
+                        }
+                        onClose();
+                        setLoading(false);
                     }
-                    onClose();
                 } catch (error) {
-                    alert("Error saving transaction");
+                    console.error('Transaction save error:', error);
+                    alert("Error saving transaction: " + (error.message || 'Please check your connection and try again'));
                     setLoading(false);
                 }
             };
@@ -1669,7 +1790,7 @@
             const handleDelete = async () => { 
                 if(!confirm("Delete this transaction? This will revert all financial effects.")) return; 
                 // Optimistic local delete
-                const backup = data.transactions;
+                const backup = (data && data.transactions) ? [...data.transactions] : [];
                 setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== editItem.id) }));
                 onClose();
                 try {
@@ -1761,14 +1882,29 @@
                         )}
                         <form onSubmit={submit} className="space-y-5">
                             {tab === 'simple' && (
-                                <div className="flex gap-3">
-                                    <button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>
-                                        Money In
-                                    </button>
-                                    <button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600 dark:bg-red-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>
-                                        Money Out
-                                    </button>
-                                </div>
+                                <>
+                                    <div className="flex gap-3">
+                                        <button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>
+                                            Money In
+                                        </button>
+                                        <button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600 dark:bg-red-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>
+                                            Money Out
+                                        </button>
+                                    </div>
+                                    <div className={`bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border ${THEMES[theme].border} border-opacity-20`}>
+                                        <p className={`text-xs font-bold uppercase ${THEMES[theme].text} mb-2`}>Amount</p>
+                                        <input 
+                                            type="number" 
+                                            min="0" 
+                                            step="0.01" 
+                                            placeholder="₹0.00" 
+                                            className={`w-full bg-transparent text-2xl font-bold outline-none ${THEMES[theme].text}`} 
+                                            value={form.amount || ''} 
+                                            onChange={e => setForm({...form, amount: e.target.value})} 
+                                            required 
+                                        />
+                                    </div>
+                                </>
                             )}
                             {tab === 'split' && (
                                 <div className="space-y-4">
@@ -1850,21 +1986,41 @@
                         )}
                         {tab === 'friend' && (
                             <>
-                                <select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})}>
+                                <select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})} required>
                                     <option value="lent">Money Rented (I gave)</option>
                                     <option value="borrowed">Money Taken (I took)</option>
                                     <option value="repayment_in">He Paid Back</option>
                                     <option value="repayment_out">I Paid Back</option>
                                 </select>
-                                <div className="flex gap-4 overflow-x-auto pb-2 hide-scroll">
-                                    {people.map(p => (
-                                        <div key={p.id} onClick={()=>setForm({...form, relatedPerson: p.id})} className="flex flex-col items-center gap-2 cursor-pointer group">
-                                            <Avatar imageId={p.imageId} name={p.name} theme={theme} />
-                                            <span className={`text-[10px] font-bold ${form.relatedPerson === p.id ? THEMES[theme].text :'text-slate-500'}`}>{p.name}</span>
-                                            {!p.email && <span className="text-[8px] text-slate-400">Manual</span>}
-                                        </div>
-                                    ))}
+                                <div className={`bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border ${THEMES[theme].border} border-opacity-20`}>
+                                    <p className={`text-xs font-bold uppercase ${THEMES[theme].text} mb-2`}>Amount</p>
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        step="0.01" 
+                                        placeholder="₹0.00" 
+                                        className={`w-full bg-transparent text-2xl font-bold outline-none ${THEMES[theme].text}`} 
+                                        value={form.amount || ''} 
+                                        onChange={e => setForm({...form, amount: e.target.value})} 
+                                        required 
+                                    />
                                 </div>
+                                <div className="flex gap-4 overflow-x-auto pb-2 hide-scroll">
+                                    {people.length === 0 ? (
+                                        <p className="text-sm text-slate-400 text-center w-full py-4">No friends added yet. Add a friend first.</p>
+                                    ) : (
+                                        people.map(p => (
+                                            <div key={p.id} onClick={()=>setForm({...form, relatedPerson: p.id})} className="flex flex-col items-center gap-2 cursor-pointer group">
+                                                <Avatar imageId={p.imageId} name={p.name} theme={theme} />
+                                                <span className={`text-[10px] font-bold ${form.relatedPerson === p.id ? THEMES[theme].text :'text-slate-500'}`}>{p.name}</span>
+                                                {!p.email && <span className="text-[8px] text-slate-400">Manual</span>}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                {form.type && ['lent', 'borrowed', 'repayment_in', 'repayment_out'].includes(form.type) && !form.relatedPerson && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400 font-bold">⚠️ Please select a friend</p>
+                                )}
                             </>
                         )}
                         <div className="flex gap-2">
@@ -1907,8 +2063,8 @@
                         <div className="relative">
                             <input 
                                 className="input-field" 
-                                placeholder="Category" 
-                                value={form.category} 
+                                placeholder="Category (e.g., Food, Transport)" 
+                                value={form.category || ''} 
                                 onChange={e=>setForm({...form, category:e.target.value})} 
                                 list="category-suggestions"
                                 required 
@@ -1927,14 +2083,22 @@
                                 <option value="Rent" />
                                 <option value="Electricity" />
                             </datalist>
-                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                <span className="text-xs text-slate-400">
-                                    Will be grouped as: {normalizeCategory(form.category || '')}
-                                </span>
-                            </div>
+                            {form.category && (
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                                    <span className="text-xs text-slate-400 bg-white dark:bg-slate-900 px-1 rounded">
+                                        → {normalizeCategory(form.category)}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         
-                        <textarea className="input-field" placeholder="Description" value={form.description} onChange={e=>setForm({...form, description:e.target.value})} rows="2" />
+                        <textarea 
+                            className="input-field" 
+                            placeholder="Description (Optional)" 
+                            value={form.description || ''} 
+                            onChange={e=>setForm({...form, description:e.target.value})} 
+                            rows="2" 
+                        />
                         <label className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-400`}>
                                 <i data-lucide={form.imageBase64 ? 'check' : 'camera'}></i>
@@ -1942,9 +2106,22 @@
                             <span className="text-sm text-slate-500">{form.imageBase64 ? 'Receipt Attached' : 'Attach Receipt'}</span>
                             <input type="file" className="hidden" accept="image/*" onChange={handleImage} />
                         </label>
-                        <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} required />
-                        <button disabled={loading || (tab === 'split' && !isSplitValid)} className={`btn-primary shadow-xl text-lg ${THEMES[theme].class} ${tab === 'split' && !isSplitValid ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            {loading ? 'Saving...' : (editItem ? 'Update' : 'Save')}
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date</label>
+                            <input 
+                                className="input-field" 
+                                type="date" 
+                                value={form.date || ''} 
+                                onChange={e=>setForm({...form, date:e.target.value})} 
+                                required 
+                                max={new Date().toISOString().split('T')[0]}
+                            />
+                        </div>
+                        <button 
+                            disabled={loading || (tab === 'split' && !isSplitValid)} 
+                            className={`btn-primary shadow-xl text-lg ${THEMES[theme].class} ${(loading || (tab === 'split' && !isSplitValid)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {loading ? 'Saving...' : (editItem && editItem.id ? 'Update' : 'Save')}
                         </button>
                         {editItem && editItem.id && (
                             <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-bold bg-red-50 dark:bg-red-900/20 rounded-xl">
