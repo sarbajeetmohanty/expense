@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>FinanceMax Platinum</title>
+    <title>FinanceMax Platinum | Financial Systems Edition</title>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0f172a">
     
@@ -59,6 +59,8 @@
         const { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, Legend } = window.Recharts || {};
 
         const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+        
+        // FINANCIAL ENGINE CORE UTILS
         const toCents = (val) => Math.round(parseFloat(val || 0) * 100);
         const fromCents = (val) => Number((val / 100).toFixed(2));
         const formatMoney = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(val || 0);
@@ -120,7 +122,6 @@
             const [filterDays, setFilterDays] = useState('30'); 
             const [customN, setCustomN] = useState('');
             const [searchTerm, setSearchTerm] = useState('');
-            const [typeFilter, setTypeFilter] = useState('ALL');
             const [activeGraph, setActiveGraph] = useState('trend'); 
             const [theme, setTheme] = useState(localStorage.getItem('fm_theme') || 'indigo');
             const [budget, setBudget] = useState(localStorage.getItem('fm_budget') || '0');
@@ -136,7 +137,7 @@
                 fetchData(); 
             }, [darkMode]);
 
-            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data, rejectedItems, dialog, filterDays, theme, activeGraph, selectedFriend, isCalendarMode, calMonth, refreshing, typeFilter]);
+            useEffect(() => { setTimeout(() => lucide.createIcons(), 200); }, [view, modal, data, rejectedItems, dialog, filterDays, theme, activeGraph, selectedFriend, isCalendarMode, calMonth, refreshing]);
 
             const fetchData = async () => {
                 setLoading(true);
@@ -148,102 +149,223 @@
                         setData(newData);
                         localStorage.setItem('fm_data', JSON.stringify(newData)); 
                         if(json.userProfile) setCurrentUser(json.userProfile);
+                        const rejected = json.transactions.filter(t => t.userId === currentUser.id && t.status === 'Rejected');
+                        if (rejected.length > 0) setRejectedItems(rejected);
                     }
                 } catch(e) {}
                 setLoading(false);
             };
 
-            const handleRefresh = () => { setRefreshing(true); setTimeout(() => window.location.reload(), 300); };
-            const confirmAction = (title, msg, onConfirm, type='neutral') => setDialog({ isOpen: true, title, msg, onConfirm: () => { onConfirm(); setDialog({ isOpen: false }); }, onCancel: () => setDialog({ isOpen: false }), type });
-            const handleApproval = (t, status) => { confirmAction(status === 'Confirmed' ? 'Approve Transaction?' : 'Reject Transaction?', `This will update your financial records.`, async () => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'handleApproval', transactionId: t.id, status: status }) }); fetchData(); }, status === 'Rejected' ? 'danger' : 'neutral'); };
-            const removePerson = (p) => { confirmAction('Remove Friend?', `Ensure balance is 0. This cannot be undone.`, async () => { setLoading(true); try { const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'deletePerson', userId: currentUser.id, personId: p.id }) }); const json = await res.json(); if(json.success) fetchData(); else alert(json.error); } catch(e) { alert("Error"); } setLoading(false); }, 'danger'); };
+            const handleRefresh = () => {
+                setRefreshing(true);
+                setTimeout(() => window.location.reload(), 300);
+            };
 
+            const confirmAction = (title, msg, onConfirm, type='neutral') => setDialog({ isOpen: true, title, msg, onConfirm: () => { onConfirm(); setDialog({ isOpen: false }); }, onCancel: () => setDialog({ isOpen: false }), type });
+            
+            const handleApproval = (t, status) => { 
+                confirmAction(
+                    status === 'Confirmed' ? 'Approve Transaction?' : 'Reject Transaction?', 
+                    `This will update your financial records.`, 
+                    async () => { 
+                        setLoading(true); 
+                        await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'handleApproval', transactionId: t.id, status: status }) }); 
+                        fetchData(); 
+                    }, 
+                    status === 'Rejected' ? 'danger' : 'neutral'
+                ); 
+            };
+
+            const removePerson = (p) => { 
+                confirmAction('Remove Friend?', `Ensure balance is 0. This cannot be undone.`, async () => { 
+                    setLoading(true); 
+                    try { 
+                        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'deletePerson', userId: currentUser.id, personId: p.id }) }); 
+                        const json = await res.json(); 
+                        if(json.success) fetchData(); 
+                        else alert(json.error); 
+                    } catch(e) { alert("Error"); } 
+                    setLoading(false); 
+                }, 'danger'); 
+            };
+
+            const exportCSV = () => { 
+                const headers = ["Date", "Type", "Amount", "Category", "Description", "Friend", "Status"]; 
+                const rows = data.transactions.map(t => [t.date.split('T')[0], t.type, t.amount, t.category, `"${t.description}"`, t.relatedPerson || "-", t.status]); 
+                const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n"); 
+                const link = document.createElement("a"); 
+                link.setAttribute("href", encodeURI(csvContent)); 
+                link.setAttribute("download", "financemax_data.csv"); 
+                document.body.appendChild(link); 
+                link.click(); 
+            };
+
+            // SENIOR ENGINEER TASK 3: RE-ENGINEERED FINANCIAL ENGINE (CASH/ONLINE CONFIRMED ONLY)
             const stats = useMemo(() => {
                 let cashBal=0, onlineBal=0, asset=0, liability=0, income=0, expense=0;
                 const graph = {}; const catMap = {};
-                const uniqueTxs = Array.from(new Map(data.transactions.map(t => [t.id, t])).values());
-
-                uniqueTxs.forEach(t => {
+                
+                data.transactions.forEach(t => {
                     if (t.status === 'Rejected') return;
-                    const isMine = t.userId === currentUser.id;
-                    if (!isMine && t.status === 'Pending') return;
                     
+                    const isMine = t.userId === currentUser.id;
+                    const isConfirmed = t.status === 'Confirmed';
+                    
+                    // Logic fix: recipient only sees money once confirmed
+                    if (!isMine && !isConfirmed) return;
+
                     const amt = toCents(t.amount);
                     const d = t.date.split('T')[0];
                     if(!graph[d]) graph[d] = {date:d, val:0};
-                    
-                    if (isMine && t.status === 'Confirmed') {
-                        if (t.type === 'income') { t.paymentMode==='Cash'?cashBal+=amt:onlineBal+=amt; income+=amt; graph[d].val+=amt; }
-                        else if (t.type === 'expense') { t.paymentMode==='Cash'?cashBal-=amt:onlineBal-=amt; expense+=amt; graph[d].val-=amt; catMap[t.category] = (catMap[t.category]||0)+amt; }
-                        else if (t.type === 'lent') { asset+=amt; }
-                        else if (t.type === 'borrowed') { liability+=amt; }
-                        else if (t.type === 'repayment_in') { t.paymentMode==='Cash'?cashBal+=amt:onlineBal+=amt; asset-=amt; graph[d].val+=amt; }
-                        else if (t.type === 'repayment_out') { t.paymentMode==='Cash'?cashBal-=amt:onlineBal-=amt; liability-=amt; graph[d].val-=amt; }
-                    } else if (!isMine && t.status === 'Confirmed') {
-                        if (t.type === 'lent') liability+=amt;
-                        else if (t.type === 'borrowed') asset+=amt;
-                        else if (t.type === 'repayment_in') liability-=amt;
-                        else if (t.type === 'repayment_out') asset-=amt;
+
+                    if (isMine) {
+                        // MATH FIX: Only confirmed movements affect available balances (Cash/Online)
+                        if (isConfirmed) {
+                            if (t.type === 'income') { 
+                                t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt; 
+                                income += amt; graph[d].val += amt; 
+                            }
+                            else if (t.type === 'expense') { 
+                                t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt; 
+                                expense += amt; graph[d].val -= amt; catMap[t.category] = (catMap[t.category]||0)+amt; 
+                            }
+                            else if (t.type === 'lent') { 
+                                // One real cash outflow for split/lent transactions
+                                t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt; 
+                                asset += amt; graph[d].val -= amt; 
+                            }
+                            else if (t.type === 'borrowed') { 
+                                t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt; 
+                                liability += amt; graph[d].val += amt; 
+                            }
+                            else if (t.type === 'repayment_in') { 
+                                t.paymentMode === 'Cash' ? cashBal += amt : onlineBal += amt; 
+                                asset -= amt; graph[d].val += amt; 
+                            }
+                            else if (t.type === 'repayment_out') { 
+                                t.paymentMode === 'Cash' ? cashBal -= amt : onlineBal -= amt; 
+                                liability -= amt; graph[d].val -= amt; 
+                            }
+                        }
+                    } else {
+                        // Synced transactions initiated by others
+                        if (isConfirmed) {
+                            if (t.type === 'lent') liability += amt;
+                            else if (t.type === 'borrowed') asset += amt;
+                            else if (t.type === 'repayment_in') liability -= amt;
+                            else if (t.type === 'repayment_out') asset -= amt;
+                        }
                     }
                 });
+
+                asset = Math.max(0, asset); 
+                liability = Math.max(0, liability);
+
+                const pieData = Object.keys(catMap).map((k,i) => ({ name: k, value: fromCents(catMap[k]), color: COLORS[i % COLORS.length] }));
+                const barData = [{ name: 'In', value: fromCents(income) }, { name: 'Out', value: fromCents(expense) }, { name: 'Lent', value: fromCents(asset) }, { name: 'Debt', value: fromCents(liability) }];
                 
+                let insight = "✅ Financial health looks stable.";
+                if(expense > income && income > 0) insight = "⚠️ Expenses exceed income.";
+                if(liability > asset) insight = "💡 Tip: Debt > Assets.";
+
                 const peopleStats = data.people.map(p => {
                     let net = 0;
-                    uniqueTxs.forEach(t => {
-                         if (t.status !== 'Confirmed') return;
+                    data.transactions.forEach(t => {
+                         if (t.status === 'Rejected') return;
                          const isMine = t.userId === currentUser.id;
+                         if (!isMine && t.status === 'Pending') return;
+                         
                          const friendEmail = p.email ? p.email.toLowerCase() : "";
                          const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
                          const amt = toCents(t.amount);
+
                          if (isMine && t.relatedPerson === p.id) { 
-                             if(t.type === 'lent') net+=amt; if(t.type==='repayment_in') net-=amt; 
-                             if(t.type === 'borrowed') net-=amt; if(t.type==='repayment_out') net+=amt; 
+                             if(t.type === 'lent') net += amt; 
+                             if(t.type === 'repayment_in') net -= amt; 
+                             if(t.type === 'borrowed') net -= amt; 
+                             if(t.type === 'repayment_out') net += amt; 
                          }
-                         if (!isMine && creatorEmail === friendEmail) { 
-                             if(t.type === 'lent') net-=amt; if(t.type==='borrowed') net+=amt; 
-                             if(t.type==='repayment_in') net+=amt; if(t.type==='repayment_out') net-=amt; 
+                         if (!isMine && creatorEmail === friendEmail && t.status === 'Confirmed') { 
+                             if(t.type === 'lent') net -= amt; 
+                             if(t.type === 'borrowed') net += amt; 
+                             if(t.type === 'repayment_in') net += amt; 
+                             if(t.type === 'repayment_out') net -= amt; 
                          }
                     });
                     return { ...p, net: fromCents(net) };
                 });
-                return { cashBal: fromCents(cashBal), onlineBal: fromCents(onlineBal), total: fromCents(cashBal+onlineBal), rented: fromCents(asset), taken: fromCents(liability), pieData: Object.keys(catMap).map((k,i) => ({ name: k, value: fromCents(catMap[k]), color: COLORS[i % COLORS.length] })), barData: [{ name: 'In', value: fromCents(income) }, { name: 'Out', value: fromCents(expense) }], graphArea: Object.values(graph).sort((a,b)=>new Date(a.date)-new Date(b.date)).map(g=>({...g, val:fromCents(g.val)})), peopleStats };
-            }, [data.transactions, currentUser.id, data.people]);
 
+                return { 
+                    cashBal: fromCents(cashBal), 
+                    onlineBal: fromCents(onlineBal), 
+                    total: fromCents(cashBal+onlineBal), 
+                    rented: fromCents(asset), 
+                    taken: fromCents(liability), 
+                    insight, 
+                    pieData, 
+                    barData, 
+                    graphArea: Object.values(graph).sort((a,b)=>new Date(a.date)-new Date(b.date)).map(g=>({...g, val:fromCents(g.val)})), 
+                    peopleStats 
+                };
+            }, [data.transactions, currentUser.id]);
+
+            const requests = data.transactions.filter(t => t.userId !== currentUser.id && t.status === 'Pending');
+            
+            // TASK 1: Day-based Date Filter Logic (Before Aggregation)
             const filterTransactions = (list) => {
                 const now = new Date(); now.setHours(0,0,0,0);
                 return list.filter(t => {
                     if(t.status === 'Rejected') return false;
-                    const matchSearch = t.category.toLowerCase().includes(searchTerm.toLowerCase()) || t.description.toLowerCase().includes(searchTerm.toLowerCase());
+                    const matchSearch = t.category.toLowerCase().includes(searchTerm.toLowerCase()) || t.description.toLowerCase().includes(searchTerm.toLowerCase()) || t.amount.toString().includes(searchTerm);
                     if(!matchSearch) return false;
-                    if (typeFilter !== 'ALL') {
-                        if (typeFilter === 'INCOME' && t.type !== 'income') return false;
-                        if (typeFilter === 'EXPENSE' && t.type !== 'expense') return false;
-                        if (typeFilter === 'FRIEND' && !['lent', 'borrowed', 'repayment_in', 'repayment_out'].includes(t.type)) return false;
-                    }
+                    
                     const txDate = new Date(t.date); txDate.setHours(0,0,0,0);
+                    
                     if (isCalendarMode) return txDate.toISOString().split('T')[0] === selectedDate;
+                    
+                    // Friendly Filter UI Logic
                     if(filterDays === 'ALL') return true;
                     if(filterDays === 'TODAY') return txDate.getTime() === now.getTime();
-                    let d = filterDays === 'CUSTOM' ? (parseInt(customN)||0) : parseInt(filterDays);
-                    const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - d);
+                    
+                    let dLimit = 0;
+                    if (filterDays === '7') dLimit = 7;
+                    else if (filterDays === '30') dLimit = 30;
+                    else if (filterDays === 'CUSTOM') {
+                        const n = parseInt(customN);
+                        dLimit = (isNaN(n) || n < 0) ? 0 : n;
+                    }
+                    
+                    if (dLimit === 0 && filterDays !== 'TODAY') return true;
+                    
+                    const cutoff = new Date(now);
+                    cutoff.setDate(cutoff.getDate() - dLimit);
                     return txDate >= cutoff;
                 });
             };
+
             const filteredHistory = filterTransactions(data.transactions);
-            
-            const historySums = useMemo(() => {
-                let incoming = 0; let outgoing = 0;
-                const uniqueFiltered = Array.from(new Map(filteredHistory.map(t => [t.id, t])).values());
-                uniqueFiltered.forEach(t => {
-                    const amt = parseFloat(t.amount);
-                    // LOGIC FIX: Do NOT count 'lent' or 'borrowed' in cash summary boxes, 
-                    // only actual movements (Income, Expense, Repayments)
-                    if (t.type === 'income' || t.type === 'repayment_in') incoming += amt;
-                    else if (t.type === 'expense' || t.type === 'repayment_out') outgoing += amt;
-                    // Note: 'borrowed' and 'lent' are debt records, not immediate cash flow in this system's logic.
+
+            // TASK 2: Aggregating Summary Cards from Filtered Dataset
+            const historySummary = useMemo(() => {
+                let inc = 0, out = 0;
+                filteredHistory.forEach(t => {
+                    if (t.status !== 'Confirmed') return;
+                    
+                    const isMine = t.userId === currentUser.id;
+                    const amt = toCents(t.amount);
+                    
+                    // Logic to determine if transaction counts as In/Out for the CURRENT USER
+                    if (isMine) {
+                        if (['income', 'borrowed', 'repayment_in'].includes(t.type)) inc += amt;
+                        else if (['expense', 'lent', 'repayment_out'].includes(t.type)) out += amt;
+                    } else {
+                        // Synced entries (View from perspective of recipient)
+                        if (['borrowed', 'repayment_in'].includes(t.type)) inc += amt;
+                        else if (['lent', 'repayment_out'].includes(t.type)) out += amt;
+                    }
                 });
-                return { incoming, outgoing };
-            }, [filteredHistory]);
+                return { in: fromCents(inc), out: fromCents(out) };
+            }, [filteredHistory, currentUser.id]);
 
             const calendarGrid = useMemo(() => {
                 const firstDay = new Date(calYear, calMonth, 1).getDay();
@@ -252,8 +374,8 @@
                 for(let i=0; i<firstDay; i++) grid.push(null);
                 for(let i=1; i<=daysInMonth; i++) {
                     const dateStr = new Date(calYear, calMonth, i).toISOString().split('T')[0];
-                    const hasInc = data.transactions.some(t => t.status === 'Confirmed' && t.date.startsWith(dateStr) && (t.type==='income'||t.type==='repayment_in'));
-                    const hasExp = data.transactions.some(t => t.status === 'Confirmed' && t.date.startsWith(dateStr) && (t.type==='expense'||t.type==='repayment_out'));
+                    const hasInc = data.transactions.some(t => t.date.startsWith(dateStr) && (t.type==='income'||t.type==='repayment_in'||t.type==='borrowed'));
+                    const hasExp = data.transactions.some(t => t.date.startsWith(dateStr) && (t.type==='expense'||t.type==='lent'||t.type==='repayment_out'));
                     grid.push({ day: i, date: dateStr, hasInc, hasExp });
                 }
                 return grid;
@@ -266,224 +388,324 @@
                     <header className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center z-20">
                         <div className="flex items-center gap-3"><Avatar imageId={currentUser.imageId} name={currentUser.name} theme={theme} /><div><h1 className="font-bold dark:text-white leading-tight">Hi, {currentUser.name.split(' ')[0]}</h1></div></div>
                         <div className="flex gap-2">
-                            <button onClick={handleRefresh} className={`icon-btn flex items-center justify-center ${refreshing ? 'animate-spin-once' : ''}`} style={{color: THEMES[theme].bg}}><i data-lucide="refresh-cw" className="w-5 h-5"></i></button>
+                            <button onClick={handleRefresh} className={`icon-btn flex items-center justify-center ${refreshing ? 'animate-spin-once' : ''}`} style={{color: THEMES[theme].bg, transition: 'all 0.3s'}}><i data-lucide="refresh-cw" className="w-5 h-5"></i></button>
                             <button onClick={()=>setDarkMode(!darkMode)} className="icon-btn"><i data-lucide={darkMode?"sun":"moon"} className="w-5 h-5"></i></button>
                             <button onClick={onLogout} className="icon-btn text-red-500 bg-red-50 dark:bg-red-900/20"><i data-lucide="log-out" className="w-5 h-5"></i></button>
                         </div>
                     </header>
 
-                    <div className="flex-1 overflow-y-auto p-4 pb-32 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-6">
+                        
                         {view === 'home' && (
                             <div className="space-y-6 animate-fade">
-                                <div className="glass p-6 rounded-[2rem] text-white shadow-xl" style={{background: `linear-gradient(135deg, ${THEMES[theme].bg} 0%, #1e1b4b 100%)`}}>
-                                    <p className="text-white/70 text-xs font-bold uppercase tracking-wider mb-1">Available Balance</p>
+                                <div className="glass p-6 rounded-[2rem] text-white shadow-xl shadow-indigo-500/30" style={{background: `linear-gradient(135deg, ${THEMES[theme].bg} 0%, #1e1b4b 100%)`}}>
+                                    <p className="text-white/70 text-xs font-bold uppercase tracking-wider mb-1">Total Actual Balance</p>
                                     <h2 className="text-4xl font-bold">{formatMoney(stats.total)}</h2>
                                     <div className="mt-6 flex gap-3">
-                                        <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/10 flex-1"><p className="text-[10px] text-white/70 font-bold">Online</p><p className="font-bold text-lg">{formatMoney(stats.onlineBal)}</p></div>
-                                        <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/10 flex-1"><p className="text-[10px] text-white/70 font-bold">Cash</p><p className="font-bold text-lg">{formatMoney(stats.cashBal)}</p></div>
+                                        <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/10 backdrop-blur-md flex-1"><p className="text-[10px] text-white/70 font-bold uppercase">Online</p><p className="font-bold text-lg">{formatMoney(stats.onlineBal)}</p></div>
+                                        <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/10 backdrop-blur-md flex-1"><p className="text-[10px] text-white/70 font-bold uppercase">Cash</p><p className="font-bold text-lg">{formatMoney(stats.cashBal)}</p></div>
                                     </div>
                                 </div>
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 text-xs font-bold rounded-xl flex items-center gap-3 border border-blue-100 dark:border-blue-900/50"><i data-lucide="sparkles" className="w-5 h-5 shrink-0"></i>{stats.insight}</div>
+                                {parseInt(budget) > 0 && (<div className="bg-white dark:bg-slate-900 p-4 rounded-[1.5rem] shadow-sm border border-slate-200 dark:border-slate-800"><div className="flex justify-between text-xs font-bold mb-2"><span className="text-slate-500">Monthly Budget</span><span>{formatMoney(stats.pieData.reduce((a,b)=>a+b.value,0))} / {formatMoney(budget)}</span></div><div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all duration-500 ${THEMES[theme].class}`} style={{width: `${Math.min(100, (stats.pieData.reduce((a,b)=>a+b.value,0)/parseInt(budget))*100)}%`}}></div></div></div>)}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-[1.5rem] shadow-sm"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Lent Assets</p><p className="text-xl font-bold text-emerald-500">{formatMoney(stats.rented)}</p></div>
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-[1.5rem] shadow-sm"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Borrow Debt</p><p className="text-xl font-bold text-red-500">{formatMoney(stats.taken)}</p></div>
+                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-[1.5rem] shadow-sm"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Assets (Rented)</p><p className="text-xl font-bold text-blue-500">{formatMoney(stats.rented)}</p></div>
+                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-[1.5rem] shadow-sm"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Liabilities (Taken)</p><p className="text-xl font-bold text-amber-500">{formatMoney(stats.taken)}</p></div>
                                 </div>
-                                <div className="flex justify-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">{['trend', 'bar', 'pie'].map(g => (<button key={g} onClick={()=>setActiveGraph(g)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeGraph===g ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' : 'text-slate-400'}`}>{g.toUpperCase()}</button>))}</div>
-                                <div className="h-64 bg-white dark:bg-slate-900 rounded-[2rem] p-4 shadow-sm border border-slate-200 dark:border-slate-800"><ResponsiveContainer width="100%" height="100%">{activeGraph === 'trend' ? (<AreaChart data={stats.graphArea}><defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={THEMES[theme].bg} stopOpacity={0.3}/><stop offset="95%" stopColor={THEMES[theme].bg} stopOpacity={0}/></linearGradient></defs><Area type="monotone" dataKey="val" stroke={THEMES[theme].bg} fill="url(#c)" strokeWidth={3} /></AreaChart>) : activeGraph === 'bar' ? (<BarChart data={stats.barData}><XAxis dataKey="name" /><Bar dataKey="value" fill={THEMES[theme].bg} radius={[4, 4, 0, 0]} /></BarChart>) : (<PieChart><Pie data={stats.pieData} innerRadius={60} outerRadius={80} dataKey="value">{stats.pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}</Pie><Legend /></PieChart>)}</ResponsiveContainer></div>
-                            </div>
-                        )}
-
-                        {view === 'history' && (
-                            <div className="space-y-4 animate-fade">
-                                <div className="scroll-x flex gap-2 pb-2">
-                                    {[{l:'Today',v:'TODAY'},{l:'7 Days',v:'7'},{l:'30 Days',v:'30'},{l:'All',v:'ALL'}].map(f => (
-                                        <button key={f.v} onClick={()=>setFilterDays(f.v)} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${filterDays===f.v ? THEMES[theme].class + ' text-white' : 'bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800'}`}>{f.l}</button>
-                                    ))}
-                                    <input type="number" placeholder="Days" className="w-20 px-3 py-2 rounded-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none" value={customN} onChange={e=>{setCustomN(e.target.value); setFilterDays('CUSTOM');}} />
-                                </div>
-                                <div className="grid grid-cols-2 gap-3 mb-2">
-                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/50">
-                                        <p className="text-[10px] font-bold text-emerald-600 uppercase">Incoming</p>
-                                        <p className="text-lg font-bold text-emerald-600">{formatMoney(historySums.incoming)}</p>
-                                    </div>
-                                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-2xl border border-red-100 dark:border-red-900/50">
-                                        <p className="text-[10px] font-bold text-red-600 uppercase">Outgoing</p>
-                                        <p className="text-lg font-bold text-red-600">{formatMoney(historySums.outgoing)}</p>
-                                    </div>
-                                </div>
-                                <div className="scroll-x flex gap-2 pb-2">
-                                    {['ALL', 'INCOME', 'EXPENSE', 'FRIEND'].map(f => (
-                                        <button key={f} onClick={()=>setTypeFilter(f)} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${typeFilter===f ? THEMES[theme].class + ' text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>{f}</button>
-                                    ))}
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold dark:text-white">{isCalendarMode ? 'Calendar' : 'History'}</h2>
-                                    <button onClick={()=>setIsCalendarMode(!isCalendarMode)} className="p-2 bg-slate-200 dark:bg-slate-800 rounded-full"><i data-lucide={isCalendarMode?"list":"calendar"} className="w-5 h-5"></i></button>
-                                </div>
-
-                                {isCalendarMode && (
-                                    <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <button onClick={()=>changeMonth(-1)}><i data-lucide="chevron-left"></i></button>
-                                            <span className="font-bold">{new Date(calYear, calMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
-                                            <button onClick={()=>changeMonth(1)}><i data-lucide="chevron-right"></i></button>
-                                        </div>
-                                        <div className="grid grid-cols-7 gap-1">
-                                            {calendarGrid.map((d, i) => (
-                                                <div key={i} onClick={()=>d && setSelectedDate(d.date)} className={`h-10 rounded-xl flex flex-col items-center justify-center cursor-pointer ${d?.date===selectedDate ? THEMES[theme].class + ' text-white' : 'dark:text-white'}`}>
-                                                    {d && (<><span className="text-xs font-bold">{d.day}</span><div className="flex gap-0.5">{d.hasInc && <div className="w-1 h-1 bg-emerald-400 rounded-full"></div>}{d.hasExp && <div className="w-1 h-1 bg-red-400 rounded-full"></div>}</div></>)}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="space-y-3">
-                                    {filteredHistory.map(t => (
-                                        <div key={t.id} onClick={() => t.userId === currentUser.id && (setEditItem(t), setModal('add'))} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                                            <div className="flex gap-3 items-center">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${['income','borrowed','repayment_in'].includes(t.type)?'bg-emerald-50 text-emerald-600':'bg-red-50 text-red-600'}`}><i data-lucide={['income','borrowed','repayment_in'].includes(t.type)?'arrow-down-left':'arrow-up-right'} className="w-5 h-5"></i></div>
-                                                <div><p className="font-bold text-sm dark:text-white">{t.category}</p><p className="text-[10px] text-slate-400">{t.date.split('T')[0]} • {t.paymentMode}</p></div>
-                                            </div>
-                                            <div className="text-right"><p className={`font-bold ${['income','borrowed','repayment_in'].includes(t.type)?'text-emerald-500':'text-red-500'}`}>{['income','borrowed','repayment_in'].includes(t.type)?'+':'-'}{formatMoney(t.amount)}</p><p className="text-[10px] uppercase font-bold text-slate-400">{t.status}</p></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        
-                        {view === 'people' && !selectedFriend && (
-                            <div className="space-y-4 animate-fade">
-                                <div className="flex justify-between items-center px-2"><h2 className="text-xl font-bold dark:text-white">Friends</h2><button onClick={()=>{setEditItem(null); setModal('person');}} className={`text-white px-4 py-2 rounded-xl text-xs font-bold ${THEMES[theme].class}`}>+ Add</button></div>
-                                {stats.peopleStats.map(p => (
-                                    <div key={p.id} onClick={()=>setSelectedFriend(p)} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                                        <div className="flex items-center gap-3"><Avatar imageId={p.imageId} name={p.name} theme={theme} /><div><p className="font-bold dark:text-white">{p.name}</p><p className={`text-xs font-bold ${p.net > 0 ? 'text-emerald-500' : p.net < 0 ? 'text-red-500' : 'text-slate-400'}`}>{p.net > 0 ? `Owes you ${formatMoney(p.net)}` : p.net < 0 ? `You owe ${formatMoney(Math.abs(p.net))}` : 'Settled'}</p></div></div>
-                                        <button onClick={(e)=>{e.stopPropagation(); removePerson(p);}} className="p-2 text-slate-400"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
-                                    </div>
-                                ))}
+                                <div className="flex justify-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">{['trend', 'bar', 'pie'].map(g => (<button key={g} onClick={()=>setActiveGraph(g)} className={`flex-1 py-2 text-xs font-bold rounded-lg capitalize transition-all ${activeGraph===g ? 'bg-white dark:bg-slate-700 shadow text-slate-900 dark:text-white' : 'text-slate-400'}`}>{g === 'trend' ? 'Cash Flow' : g === 'bar' ? 'Analysis' : 'Category'}</button>))}</div>
+                                <div className="h-64 bg-white dark:bg-slate-900 rounded-[2rem] p-4 shadow-sm border border-slate-200 dark:border-slate-800"><ResponsiveContainer width="100%" height="100%">{activeGraph === 'trend' ? (<AreaChart data={stats.graphArea}><defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={THEMES[theme].bg} stopOpacity={0.3}/><stop offset="95%" stopColor={THEMES[theme].bg} stopOpacity={0}/></linearGradient></defs><Tooltip contentStyle={{backgroundColor:'#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} /><Area type="monotone" dataKey="val" stroke={THEMES[theme].bg} fill="url(#c)" strokeWidth={3} /></AreaChart>) : activeGraph === 'bar' ? (<BarChart data={stats.barData}><XAxis dataKey="name" tick={{fontSize: 10}} stroke="#94a3b8" /><Tooltip contentStyle={{backgroundColor:'#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: 'transparent'}} /><Bar dataKey="value" fill={THEMES[theme].bg} radius={[4, 4, 0, 0]} /></BarChart>) : (<PieChart><Pie data={stats.pieData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{stats.pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}</Pie><Tooltip contentStyle={{backgroundColor:'#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} /><Legend /></PieChart>)}</ResponsiveContainer></div>
                             </div>
                         )}
 
                         {view === 'requests' && (
                             <div className="space-y-4 animate-fade">
-                                <h2 className="text-xl font-bold dark:text-white">Pending Requests</h2>
-                                {data.transactions.filter(t => t.userId !== currentUser.id && t.status === 'Pending').map(t => (
-                                    <div key={t.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200 dark:border-indigo-900">
-                                        <div className="flex justify-between mb-4"><div><p className="text-xs font-bold text-indigo-500">{t.creatorEmail}</p><p className="font-bold dark:text-white">{t.category}</p></div><p className="font-bold text-lg dark:text-white">{formatMoney(t.amount)}</p></div>
-                                        <div className="flex gap-2"><button onClick={()=>handleApproval(t, 'Rejected')} className="flex-1 py-2 rounded-xl bg-red-50 text-red-600 font-bold">Reject</button><button onClick={()=>handleApproval(t, 'Confirmed')} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-bold">Approve</button></div>
+                                <h2 className="text-xl font-bold dark:text-white px-2">Pending Requests</h2>
+                                {requests.length === 0 && <p className="text-center text-slate-400 mt-10">No pending requests.</p>}
+                                {requests.map(t => {
+                                    let type = t.type;
+                                    if(type === 'lent') type = 'borrowed'; else if(type === 'borrowed') type = 'lent';
+                                    else if(type === 'repayment_in') type = 'repayment_out'; else if(type === 'repayment_out') type = 'repayment_in';
+                                    return (
+                                        <div key={t.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200 dark:border-indigo-900 shadow-sm">
+                                            <div className="flex justify-between items-start mb-4"><div><p className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">{t.creatorEmail}</p><p className="font-bold dark:text-white text-lg">{t.category}</p><p className="text-slate-400 text-sm">{t.description}</p></div><div className="text-right"><span className="font-bold text-xl block dark:text-white">{formatMoney(t.amount)}</span><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${type==='borrowed'?'bg-amber-100 text-amber-600':'bg-blue-100 text-blue-600'}`}>{type === 'borrowed' ? 'You Owe' : 'They Owe'}</span></div></div>
+                                            <div className="flex gap-3"><button onClick={()=>handleApproval(t, 'Rejected')} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold border border-red-100 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50">Reject</button><button onClick={()=>handleApproval(t, 'Confirmed')} className="flex-1 py-3 rounded-xl bg-emerald-50 text-emerald-600 font-bold border border-emerald-100 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/50">Approve</button></div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {(view === 'history' || (view === 'people' && selectedFriend)) && (
+                            <div className="space-y-4 animate-fade">
+                                <div className="flex justify-between items-center px-2">
+                                    <h2 className="text-xl font-bold dark:text-white">{selectedFriend ? `History w/ ${selectedFriend.name}` : isCalendarMode ? 'Calendar View' : 'Transactions'}</h2>
+                                    {!selectedFriend && <button onClick={()=>setIsCalendarMode(!isCalendarMode)} className={`p-2 rounded-full ${isCalendarMode ? THEMES[theme].class + ' text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}><i data-lucide={isCalendarMode?"list":"calendar"} className="w-5 h-5"></i></button>}
+                                </div>
+                                
+                                {/* TASK 1: History Section Date Filters */}
+                                {!selectedFriend && !isCalendarMode && (
+                                    <div className="px-2 space-y-3">
+                                        <div className="scroll-x flex gap-2 pb-1">
+                                            {[
+                                                { id: 'TODAY', label: 'Today' },
+                                                { id: '7', label: 'Last 7 Days' },
+                                                { id: '30', label: 'Last 30 Days' },
+                                                { id: 'ALL', label: 'All Time' },
+                                                { id: 'CUSTOM', label: 'Custom' }
+                                            ].map(f => (
+                                                <button key={f.id} onClick={()=>setFilterDays(f.id)} className={`px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-tight transition-all ${filterDays===f.id ? THEMES[theme].class + ' text-white shadow-md' : 'bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800'}`}>{f.label}</button>
+                                            ))}
+                                        </div>
+                                        {filterDays === 'CUSTOM' && (
+                                            <div className="flex items-center gap-2 animate-fade">
+                                                <span className="text-xs font-bold text-slate-400 uppercase">Show past</span>
+                                                <input type="number" min="1" className="w-16 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-center outline-none focus:ring-1 focus:ring-indigo-500" value={customN} onChange={e=>setCustomN(e.target.value)} placeholder="N" />
+                                                <span className="text-xs font-bold text-slate-400 uppercase">days</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* TASK 2: History Summary Cards */}
+                                {!isCalendarMode && (
+                                    <div className="grid grid-cols-2 gap-3 px-2">
+                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Incoming</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-emerald-600">{formatMoney(historySummary.in)}</p>
+                                        </div>
+                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Outgoing</p>
+                                            </div>
+                                            <p className="text-lg font-bold text-red-600">{formatMoney(historySummary.out)}</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="px-4 mb-2"><div className="flex items-center bg-white dark:bg-slate-900 rounded-xl px-3 py-3 border border-slate-200 dark:border-slate-800"><i data-lucide="search" className="w-4 h-4 text-slate-400 mr-2"></i><input className="bg-transparent outline-none w-full text-sm dark:text-white" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div></div>
+                                
+                                {filteredHistory.length === 0 && <p className="text-center text-slate-400 mt-10">No transactions found.</p>}
+                                
+                                {filteredHistory.map(t => {
+                                    const isMine = t.userId === currentUser.id;
+                                    let effectiveType = t.type; let displayType = t.type;
+                                    const whoPaidText = isMine ? "Paid by You" : `Paid by ${t.creatorEmail.split('@')[0]}`;
+                                    if(selectedFriend) {
+                                        const friendEmail = selectedFriend.email ? selectedFriend.email.toLowerCase() : "";
+                                        const creatorEmail = t.creatorEmail ? t.creatorEmail.toLowerCase() : "";
+                                        const isRelated = (isMine && t.relatedPerson === selectedFriend.id) || (!isMine && creatorEmail === friendEmail);
+                                        if(!isRelated) return null;
+                                    }
+                                    if(!isMine) { if (t.type === 'lent') effectiveType = 'borrowed'; else if (t.type === 'borrowed') effectiveType = 'lent'; else if (t.type === 'repayment_in') effectiveType = 'repayment_out'; else if (t.type === 'repayment_out') effectiveType = 'repayment_in'; displayType = effectiveType; }
+                                    return (
+                                        <div key={t.id} onClick={() => isMine ? (setEditItem(t), setModal('add')) : alert("Synced Transaction. Cannot edit.")} className={`flex justify-between items-center p-4 bg-white dark:bg-slate-900 rounded-2xl border ${!isMine ? 'border-dashed border-indigo-300 dark:border-indigo-800' : 'border-slate-200 dark:border-slate-800'} shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition`}>
+                                            <div className="flex gap-4 items-center">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${displayType.includes('income')?'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':displayType.includes('expense')?'bg-red-50 text-red-600 dark:bg-red-900/20':'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}><i data-lucide={displayType==='income'?'arrow-down':displayType==='expense'?'arrow-up':'refresh-cw'} className="w-5 h-5"></i></div>
+                                                <div className="min-w-0"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{whoPaidText}</p><p className="font-bold text-sm dark:text-white truncate">{t.category} {!isMine && <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1 rounded ml-1">SYNC</span>}{t.status === 'Pending' && <span className="text-[10px] text-amber-500 bg-amber-50 px-1 rounded ml-1">PENDING</span>}</p><div className="flex items-center gap-1"><p className="text-xs text-slate-500 font-medium">{t.date.split('T')[0]} • {t.paymentMode}</p>{t.imageId && <i data-lucide="paperclip" className="w-3 h-3 text-indigo-500"></i>}</div></div>
+                                            </div>
+                                            <div className="text-right shrink-0"><span className="font-bold block dark:text-white text-lg">{formatMoney(t.amount)}</span><span className="text-[10px] font-bold uppercase text-slate-400">{displayType==='income'?'In':displayType==='expense'?'Out':displayType==='borrowed'?'Debt':'Lent'}</span></div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {view === 'people' && !selectedFriend && (
+                            <div className="space-y-4 animate-fade">
+                                <div className="px-4 mb-2"><div className="flex items-center bg-white dark:bg-slate-900 rounded-xl px-3 py-3 border border-slate-200 dark:border-slate-800"><i data-lucide="search" className="w-4 h-4 text-slate-400 mr-2"></i><input className="bg-transparent outline-none w-full text-sm dark:text-white" placeholder="Search friends..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div></div>
+                                <div className="flex justify-between items-center px-2"><h2 className="text-xl font-bold dark:text-white">Friends</h2><button onClick={()=>{setEditItem(null); setModal('person');}} className={`text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg ${THEMES[theme].class}`}>+ Add Friend</button></div>
+                                {stats.peopleStats.filter(p=>p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                                    <div key={p.id} onClick={()=>setSelectedFriend(p)} className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <div className="flex items-center gap-3"><Avatar imageId={p.imageId} name={p.name} theme={theme} /><div><div className="flex items-center gap-2"><p className="font-bold dark:text-white">{p.name}</p>{p.email && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded font-bold">LINKED</span>}</div><p className={`text-xs font-bold ${p.net > 0 ? 'text-emerald-500' : p.net < 0 ? 'text-red-500' : 'text-slate-400'}`}>{p.net > 0 ? `You will get ${formatMoney(p.net)}` : p.net < 0 ? `You need to pay ${formatMoney(Math.abs(p.net))}` : 'Settled'}</p></div></div>
+                                        <button onClick={(e)=>{e.stopPropagation(); removePerson(p);}} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
                                     </div>
                                 ))}
                             </div>
                         )}
-                        
-                        {view === 'profile' && <ProfileView user={currentUser} onUpdate={u => setCurrentUser(u)} theme={theme} />}
+
+                        {view === 'profile' && (
+                            <div className="space-y-6 animate-fade">
+                                <ProfileView user={currentUser} onUpdate={u => setCurrentUser(u)} theme={theme} />
+                                <div className="px-4"><p className="text-xs font-bold text-slate-400 uppercase mb-3">Settings</p>
+                                    <div className="bg-white dark:bg-slate-900 rounded-[1.5rem] p-4 space-y-4">
+                                        <div className="flex justify-between items-center"><span className="text-sm font-bold dark:text-white">Monthly Budget</span><input type="number" className="w-24 text-right bg-slate-100 dark:bg-slate-800 rounded-lg px-2 py-1 text-sm outline-none" placeholder="0" value={budget} onChange={e=>{setBudget(e.target.value); localStorage.setItem('fm_budget', e.target.value);}} /></div>
+                                        <div className="flex justify-between items-center"><span className="text-sm font-bold dark:text-white">Theme Color</span><div className="flex gap-2">{Object.keys(THEMES).map(c=>(<div key={c} onClick={()=>{setTheme(c); localStorage.setItem('fm_theme', c);}} className={`w-6 h-6 rounded-full cursor-pointer border-2 ${theme===c?'border-slate-900 dark:border-white':'border-transparent'}`} style={{backgroundColor:THEMES[c].bg}}></div>))}</div></div>
+                                        <button onClick={exportCSV} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm flex justify-center gap-2"><i data-lucide="download" className="w-4 h-4"></i> Export Data (CSV)</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    <button onClick={()=>{setEditItem(null); setModal('add');}} className={`fixed bottom-24 right-6 w-16 h-16 text-white rounded-full shadow-xl flex items-center justify-center z-30 ${THEMES[theme].class}`}><i data-lucide="plus" className="w-8 h-8"></i></button>
+                    <button onClick={()=>{setEditItem(null); setModal('add');}} className={`absolute bottom-24 right-6 w-16 h-16 text-white rounded-full shadow-xl flex items-center justify-center z-30 transition-transform active:scale-90 ${THEMES[theme].class}`}><i data-lucide="plus" className="w-8 h-8"></i></button>
 
-                    <div className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-3 flex justify-between items-center z-40 pb-safe">
+                    <div className="absolute bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-3 flex justify-between items-center z-40 pb-safe">
                         {['home','history','people','requests','profile'].map(v => (
-                            <button key={v} onClick={()=>{setView(v); setSelectedFriend(null);}} className={`flex flex-col items-center gap-1 ${view===v?THEMES[theme].text : 'text-slate-400'}`}>
-                                <i data-lucide={v==='home'?'home':v==='history'?'list':v==='people'?'users':v==='requests'?'bell':'user'} className="w-6 h-6"></i>
+                            <button key={v} onClick={()=>{setView(v); setSelectedFriend(null); setIsCalendarMode(false);}} className={`flex flex-col items-center gap-1 transition-all ${view===v?THEMES[theme].text + ' scale-110':'text-slate-400 dark:text-slate-600'}`}>
+                                <div className="relative"><i data-lucide={v==='home'?'home':v==='history'?'list':v==='people'?'users':v==='requests'?'bell':'user'} className={`w-6 h-6 ${view===v && 'fill-current opacity-20'}`}></i>{v==='requests' && requests.length > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>}</div>
                             </button>
                         ))}
                     </div>
 
-                    {modal === 'add' && <TransactionModal user={currentUser} people={data.people} editItem={editItem} onClose={()=>{setModal(null); fetchData();}} theme={theme} stats={stats}/>}
+                    {selectedFriend && (
+                        <div className="absolute top-0 left-0 w-full h-20 bg-white dark:bg-slate-900 flex items-center px-4 z-50 border-b border-slate-200 dark:border-slate-800 animate-fade">
+                            <button onClick={()=>setSelectedFriend(null)} className="p-2 -ml-2 text-slate-500"><i data-lucide="arrow-left" className="w-6 h-6"></i></button>
+                            <div className="ml-3 flex items-center gap-3"><Avatar imageId={selectedFriend.imageId} name={selectedFriend.name} theme={theme} /><div><h2 className="font-bold text-lg dark:text-white">{selectedFriend.name}</h2><p className={`text-xs font-bold ${selectedFriend.net > 0 ? 'text-emerald-500' : selectedFriend.net < 0 ? 'text-red-500' : 'text-slate-400'}`}>{selectedFriend.net > 0 ? `Owes you ${formatMoney(selectedFriend.net)}` : selectedFriend.net < 0 ? `You owe ${formatMoney(Math.abs(selectedFriend.net))}` : 'Settled'}</p></div></div>
+                        </div>
+                    )}
+
+                    <ConfirmDialog isOpen={dialog.isOpen} title={dialog.title} msg={dialog.msg} onConfirm={dialog.onConfirm} onCancel={dialog.onCancel} type={dialog.type} theme={theme} />
+                    
+                    {rejectedItems.length > 0 && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade">
+                            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-up relative text-center">
+                                <button onClick={()=>setRejectedItems(prev=>prev.slice(1))} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" className="w-5 h-5"></i></button>
+                                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="alert-circle" className="w-8 h-8"></i></div>
+                                <h3 className="font-bold text-xl dark:text-white mb-2">Request Rejected</h3>
+                                <p className="text-slate-500 text-sm mb-6">Your transaction "{rejectedItems[0].description}" of {formatMoney(rejectedItems[0].amount)} was rejected.</p>
+                                <div className="flex gap-3">
+                                    <button onClick={()=>{confirmAction('Delete Record?', 'This will permanently delete this rejected request.', ()=>{fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})}).then(()=>fetchData()); setRejectedItems(prev => prev.slice(1));}, 'danger', theme);}} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold">Delete</button>
+                                    <button onClick={()=>{ const { id, status, ...retryData } = rejectedItems[0]; if(retryData.date) retryData.date = retryData.date.split('T')[0]; fetch(API_URL, { method:'POST', body:JSON.stringify({action:'delete', id:rejectedItems[0].id, userId:currentUser.id})}); setEditItem(retryData); setModal('add'); setRejectedItems(prev => prev.slice(1)); }} className={`flex-1 py-3 rounded-xl text-white font-bold shadow-lg ${THEMES[theme].class}`}>Retry</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {modal === 'add' && <TransactionModal user={currentUser} people={data.people} editItem={editItem} onClose={()=>{setModal(null); fetchData();}} theme={theme} />}
                     {modal === 'person' && <PersonModal user={currentUser} onClose={()=>{setModal(null); fetchData();}} theme={theme} />}
-                    <ConfirmDialog isOpen={dialog.isOpen} {...dialog} theme={theme} />
                 </div>
             );
         }
 
-        function TransactionModal({ user, people, editItem, onClose, theme, stats }) {
+        function TransactionModal({ user, people, editItem, onClose, theme }) {
             const [tab, setTab] = useState(editItem ? (['lent','borrowed','repayment_in','repayment_out'].includes(editItem.type)?'friend':'simple') : 'simple'); 
-            const [whoPaid, setWhoPaid] = useState('me');
+            const [splitMode, setSplitMode] = useState('equal');
+            const [includeMe, setIncludeMe] = useState(true);
             const [selectedFriends, setSelectedFriends] = useState([]); 
             const [splitAmounts, setSplitAmounts] = useState({}); 
-            const [form, setForm] = useState(editItem ? { ...editItem, date: editItem.date.split('T')[0] } : { type: 'expense', amount: '', category: 'General', description: '', date: new Date().toISOString().split('T')[0], relatedPerson: '', paymentMode: 'Online', totalBill: '' });
+            const [form, setForm] = useState(editItem ? { ...editItem, date: editItem.date ? editItem.date.split('T')[0] : new Date().toISOString().split('T')[0], totalBill: '' } : { type: 'expense', amount: '', category: 'General', description: '', date: new Date().toISOString().split('T')[0], relatedPerson: '', paymentMode: 'Online', totalBill: '' });
             const [loading, setLoading] = useState(false);
 
-            useEffect(() => {
-                if(tab === 'split' && form.totalBill) {
-                    const total = parseFloat(form.totalBill) || 0;
-                    const count = selectedFriends.length + 1;
-                    const share = parseFloat((total / count).toFixed(2));
-                    const newSplits = {};
-                    selectedFriends.forEach(id => newSplits[id] = share);
-                    newSplits['me'] = parseFloat((total - (share * selectedFriends.length)).toFixed(2));
-                    setSplitAmounts(newSplits);
-                }
-            }, [form.totalBill, selectedFriends, tab]);
+            const totalBillAmount = parseFloat(form.totalBill || 0);
+            const sumSplits = Object.values(splitAmounts).reduce((a,b) => a + (parseFloat(b)||0), 0);
+            const remaining = totalBillAmount - sumSplits;
+            const isSplitValid = Math.abs(remaining) < 0.1; 
 
-            const submit = async (e) => {
-                e.preventDefault();
-                setLoading(true);
-                let body = {};
-                if(tab === 'split') {
-                    const items = [];
-                    if (whoPaid === 'me') {
-                        items.push({ ...form, type: 'expense', amount: splitAmounts['me'], status: 'Confirmed', description: `${form.description} (My Share)` });
-                        selectedFriends.forEach(id => { items.push({ ...form, type: 'lent', amount: splitAmounts[id], relatedPerson: id, description: `${form.description} (Split)` }); });
-                    } else {
-                        items.push({ ...form, type: 'expense', amount: splitAmounts['me'], status: 'Confirmed', description: `${form.description} (My Share)` });
-                        items.push({ ...form, type: 'borrowed', amount: splitAmounts['me'], relatedPerson: whoPaid, description: `${form.description} (Split)` });
+            useEffect(() => {
+                if(tab === 'split' && splitMode === 'equal' && form.totalBill) {
+                    const total = parseFloat(form.totalBill) || 0;
+                    const participants = [...selectedFriends];
+                    if(includeMe) participants.push('me');
+                    const count = participants.length;
+                    
+                    if(count > 0) {
+                        const share = parseFloat((total / count).toFixed(2));
+                        const newSplits = {};
+                        selectedFriends.forEach(id => newSplits[id] = share);
+                        if(includeMe) {
+                           // Correct remainder distribution on payer
+                           const remainder = total - (share * count);
+                           newSplits['me'] = parseFloat((share + remainder).toFixed(2));
+                        }
+                        setSplitAmounts(newSplits);
                     }
-                    body = { action: 'batchAdd', userId: user.id, items };
-                } else {
-                    body = { action: editItem ? 'update' : 'add', id: editItem?.id, userId: user.id, ...form };
                 }
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
-                onClose();
+            }, [form.totalBill, selectedFriends, includeMe, splitMode, tab]);
+
+            const handleCustomSplitChange = (id, value) => {
+                const newSplits = { ...splitAmounts, [id]: value };
+                setSplitAmounts(newSplits);
             };
 
+            const toggleFriend = (id) => selectedFriends.includes(id) ? setSelectedFriends(prev => prev.filter(f => f !== id)) : setSelectedFriends(prev => [...prev, id]);
+            
+            const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); };
+            
+            const submit = async (e) => { 
+                e.preventDefault(); 
+                setLoading(true); 
+                let body = {}; 
+                const isUpdate = editItem && editItem.id; 
+                
+                if(tab === 'split') { 
+                    if(!isSplitValid) { alert("Split total does not match bill amount"); setLoading(false); return; } 
+                    const items = []; 
+                    
+                    // Create Payer Share (Confirmed Expense)
+                    if(includeMe && splitAmounts['me'] > 0) {
+                        items.push({ 
+                            ...form, 
+                            type: 'expense', 
+                            amount: parseFloat(splitAmounts['me']), 
+                            description: `${form.description} (My Share)`, 
+                            relatedPerson: '', 
+                            status: 'Confirmed' 
+                        });
+                    }
+                    
+                    // Create Friend Shares (Pending Lent)
+                    selectedFriends.forEach(id => { 
+                        if(splitAmounts[id] > 0) {
+                            items.push({ 
+                                ...form, 
+                                type: 'lent', 
+                                amount: parseFloat(splitAmounts[id]), 
+                                description: `${form.description} (Split Bill)`, 
+                                relatedPerson: id,
+                                status: 'Pending'
+                            }); 
+                        }
+                    }); 
+                    
+                    if(items.length === 0) { alert("Invalid split"); setLoading(false); return; } 
+                    body = { action: 'batchAdd', userId: user.id, items }; 
+                } else { 
+                    body = { action: isUpdate ? 'update' : 'add', id: isUpdate ? editItem.id : undefined, userId: user.id, ...form }; 
+                } 
+                
+                await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) }); 
+                onClose(); 
+            };
+            
+            const handleDelete = async () => { if(!confirm("Delete this?")) return; setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', id: editItem.id, userId: user.id }) }); onClose(); };
+
             return (
-                <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-sm p-2">
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-sm p-2 sm:items-center">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-up max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl dark:text-white">Transaction</h3><button onClick={onClose}><i data-lucide="x"></i></button></div>
-                        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl mb-6">{['simple', 'friend', 'split'].map(t => (<button key={t} onClick={()=>setTab(t)} className={`flex-1 py-3 text-xs font-bold uppercase rounded-xl ${tab===t?'bg-white dark:bg-slate-700 shadow ' + THEMES[theme].text :'text-slate-400'}`}>{t}</button>))}</div>
-                        <form onSubmit={submit} className="space-y-4">
-                            {tab === 'simple' && <div className="flex gap-3"><button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600':'bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Income</button><button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600':'bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Expense</button></div>}
+                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl dark:text-white">{editItem && editItem.id ? 'Edit Entry' : 'New Entry'}</h3><button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button></div>
+                        {!editItem && <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl mb-6">{['simple', 'friend', 'split'].map(t => (<button key={t} onClick={()=>setTab(t)} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${tab===t?'bg-white dark:bg-slate-700 shadow ' + THEMES[theme].text :'text-slate-400'}`}>{t}</button>))}</div>}
+                        <form onSubmit={submit} className="space-y-5">
+                            {tab === 'simple' && <div className="flex gap-3"><button type="button" onClick={()=>setForm({...form, type:'income'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='income'?'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money In</button><button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-4 rounded-2xl border-2 font-bold transition-all ${form.type==='expense'?'border-red-500 bg-red-50 text-red-600 dark:bg-red-900/20':'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}>Money Out</button></div>}
                             {tab === 'split' && (
                                 <div className="space-y-4">
-                                    <input type="number" placeholder="Total Bill" className="input-field text-2xl font-bold" value={form.totalBill} onChange={e=>setForm({...form, totalBill:e.target.value})} />
-                                    <select className="input-field" value={whoPaid} onChange={e=>setWhoPaid(e.target.value)}>
-                                        <option value="me">I Paid</option>{people.map(p => <option key={p.id} value={p.id}>{p.name} Paid</option>)}
-                                    </select>
-                                    <div className="space-y-2">{people.map(p => (
-                                        <div key={p.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                                            <input type="checkbox" checked={selectedFriends.includes(p.id)} onChange={()=>{ setSelectedFriends(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id]); }} />
-                                            <span className="flex-1 font-bold text-sm dark:text-white">{p.name}</span>
-                                            {selectedFriends.includes(p.id) && <span className="text-xs font-bold">{formatMoney(splitAmounts[p.id])}</span>}
-                                        </div>
-                                    ))}</div>
+                                    <div className={`bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border ${THEMES[theme].border} border-opacity-20`}><p className={`text-xs font-bold uppercase mb-2 ${THEMES[theme].text}`}>Total Bill</p><input type="number" min="0" placeholder="₹0" className={`w-full bg-transparent text-3xl font-bold outline-none ${THEMES[theme].text}`} value={form.totalBill} onChange={e => setForm({...form, totalBill: e.target.value})} /></div>
+                                    <div className="flex gap-2 mb-2"><button type="button" onClick={()=>setSplitMode('equal')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='equal'?THEMES[theme].border + ' ' + THEMES[theme].text :'border-slate-200 text-slate-400'}`}>Equal</button><button type="button" onClick={()=>setSplitMode('custom')} className={`flex-1 py-2 text-xs font-bold rounded-lg border ${splitMode==='custom'?THEMES[theme].border + ' ' + THEMES[theme].text :'border-slate-200 text-slate-400'}`}>Custom</button></div>
+                                    {splitMode === 'custom' && Math.abs(remaining) > 0.1 && <div className={`text-xs text-center font-bold ${remaining < 0 ? 'text-red-500' : 'text-slate-400'}`}>{remaining > 0 ? `Remaining: ${formatMoney(remaining)}` : `Over by: ${formatMoney(Math.abs(remaining))}`}</div>}
+                                    <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl"><div className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer ${includeMe ? THEMES[theme].class + ' border-transparent text-white' : 'border-slate-300'}`} onClick={()=>setIncludeMe(!includeMe)}>{includeMe && <i data-lucide="check" className="w-3 h-3"></i>}</div><div className="flex-1 text-sm font-bold dark:text-white">Include Me</div>{includeMe && (<input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts['me'] || ''} disabled={splitMode === 'equal'} onChange={e => handleCustomSplitChange('me', e.target.value)} />)}</div>
+                                    <div className="space-y-2 max-h-40 overflow-y-auto hide-scroll">{people.map(p => (<div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${selectedFriends.includes(p.id) ? THEMES[theme].border + ' bg-slate-50 dark:bg-slate-800' : 'border-slate-200 dark:border-slate-800'}`}><div onClick={()=>toggleFriend(p.id)} className="cursor-pointer"><Avatar imageId={p.imageId} name={p.name} size="sm" theme={theme} /></div><div className="flex-1 text-sm font-bold dark:text-white cursor-pointer" onClick={()=>toggleFriend(p.id)}>{p.name}</div>{selectedFriends.includes(p.id) && (<input type="number" className="w-20 p-2 text-right bg-transparent outline-none font-bold" placeholder="0" value={splitAmounts[p.id] || ''} disabled={splitMode === 'equal'} onChange={e => handleCustomSplitChange(p.id, e.target.value)} />)}</div>))}</div>
                                 </div>
                             )}
-                            {tab === 'friend' && (
-                                <><select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})}>
-                                    <option value="lent">I Lent</option><option value="borrowed">I Borrowed</option>
-                                    <option value="repayment_in">Friend Repaid</option><option value="repayment_out">I Repaid</option>
-                                </select>
-                                <select className="input-field" value={form.relatedPerson} onChange={e=>setForm({...form, relatedPerson:e.target.value})} required>
-                                    <option value="">Select Friend</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select></>
-                            )}
-                            {tab !== 'split' && <input type="number" placeholder="Amount" className="input-field text-xl font-bold" value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})} required />}
+                            {tab === 'friend' && <><select className="input-field" value={form.type} onChange={e=>setForm({...form, type:e.target.value})}><option value="lent">Money Rented (I gave)</option><option value="borrowed">Money Taken (I took)</option><option value="repayment_in">He Paid Back</option><option value="repayment_out">I Paid Back</option></select><div className="flex gap-4 overflow-x-auto pb-2 hide-scroll">{people.map(p => (<div key={p.id} onClick={()=>setForm({...form, relatedPerson: p.id})} className="flex flex-col items-center gap-2 cursor-pointer group"><Avatar imageId={p.imageId} name={p.name} theme={theme} /><span className={`text-[10px] font-bold ${form.relatedPerson === p.id ? THEMES[theme].text :'text-slate-500'}`}>{p.name}</span></div>))}</div></>}
+                            <div className="flex gap-2"><button type="button" onClick={()=>setForm({...form, paymentMode:'Online'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Online'?THEMES[theme].class + ' text-white shadow-lg':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Online</button><button type="button" onClick={()=>setForm({...form, paymentMode:'Cash'})} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${form.paymentMode==='Cash'?THEMES[theme].class + ' text-white shadow-lg':'bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>Cash</button></div>
+                            {tab !== 'split' && <input type="number" min="0" placeholder="Amount" className="input-field text-xl font-bold" value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})} required />}
                             <input className="input-field" placeholder="Category" value={form.category} onChange={e=>setForm({...form, category:e.target.value})} required />
-                            <div className="flex gap-2">
-                                {['Online', 'Cash'].map(m => (
-                                    <button key={m} type="button" onClick={()=>setForm({...form, paymentMode:m})} className={`flex-1 py-3 rounded-xl text-xs font-bold ${form.paymentMode===m?THEMES[theme].class + ' text-white':'bg-slate-100 dark:bg-slate-800'}`}>{m}</button>
-                                ))}
-                            </div>
-                            <button className={`btn-primary shadow-xl ${THEMES[theme].class}`}>{loading ? '...' : 'Save'}</button>
+                            <label className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"><div className={`w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-400`}><i data-lucide={form.imageBase64 ? 'check' : 'camera'}></i></div><span className="text-sm text-slate-500">{form.imageBase64 ? 'Receipt Attached' : 'Attach Receipt'}</span><input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label>
+                            <input className="input-field" type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} required />
+                            <button disabled={loading || (tab === 'split' && !isSplitValid)} className={`btn-primary shadow-xl text-lg ${THEMES[theme].class} ${tab === 'split' && !isSplitValid ? 'opacity-50 cursor-not-allowed' : ''}`}>{loading ? 'Saving...' : 'Save'}</button>
+                            {editItem && editItem.id && <button type="button" onClick={handleDelete} className="w-full py-3 text-red-500 font-bold bg-red-50 dark:bg-red-900/20 rounded-xl">Delete Entry</button>}
                         </form>
                     </div>
                 </div>
             );
         }
 
-        function PersonModal({ user, onClose, theme }) { const [mode, setMode] = useState('search'); const [query, setQuery] = useState(''); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false); const [manualForm, setManualForm] = useState({ name: '', phone: '', imageBase64: '' }); const handleSearch = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch(`${API_URL}?action=searchUsers&userId=${user.id}&query=${query}`); const json = await res.json(); if(json.success) setResults(json.results); } catch(e) {} setLoading(false); }; const connectUser = async (targetUser) => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, linkedUserId: targetUser.id, name: targetUser.name }) }); onClose(); }; const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setManualForm({...manualForm, imageBase64: b64})); }; const submitManual = async (e) => { e.preventDefault(); setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, ...manualForm }) }); onClose(); }; return (<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"><div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 animate-up shadow-2xl h-[500px] flex flex-col"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg dark:text-white">{mode==='search'?'Find Friend':'Add Manual Reminder'}</h3><button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button></div>{mode === 'search' ? (<div className="flex-1 flex flex-col"><form onSubmit={handleSearch} className="flex gap-2 mb-4"><input className="input-field py-2" placeholder="Search by name..." value={query} onChange={e=>setQuery(e.target.value)} autoFocus /><button className={`text-white p-3 rounded-xl ${THEMES[theme].class}`}><i data-lucide="search" className="w-5 h-5"></i></button></form><div className="flex-1 overflow-y-auto space-y-2 mb-4">{results.map(r => (<div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl"><div className="flex items-center gap-3"><Avatar imageId={r.imageId} name={r.name} size="sm" theme={theme} /><span className="font-bold text-sm dark:text-white">{r.name}</span></div><button onClick={()=>connectUser(r)} disabled={loading} className={`text-xs px-3 py-1.5 rounded-lg font-bold bg-slate-100 ${THEMES[theme].text}`}>Connect</button></div>))}</div><div className="text-center pt-4 border-t border-slate-100 dark:border-slate-800"><p className="text-xs text-slate-400 mb-2">Can't find them?</p><button onClick={()=>setMode('manual')} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm">Add Manually</button></div></div>) : (<form onSubmit={submitManual} className="flex-1 flex flex-col gap-4"><label className="block w-20 h-20 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden cursor-pointer"><input type="file" className="hidden" accept="image/*" onChange={handleImage} />{manualForm.imageBase64 ? <img src={manualForm.imageBase64} className="w-full h-full object-cover"/> : <i data-lucide="camera" className="text-slate-400 w-6 h-6"></i>}</label><input className="input-field" placeholder="Name" value={manualForm.name} onChange={e=>setManualForm({...manualForm, name:e.target.value})} required /><input className="input-field" placeholder="Phone" value={manualForm.phone} onChange={e=>setManualForm({...manualForm, phone:e.target.value})} /><div className="mt-auto flex gap-3"><button type="button" onClick={()=>setMode('search')} className="flex-1 py-3 text-slate-500 font-bold">Back</button><button disabled={loading} className={`flex-1 btn-primary shadow-lg ${THEMES[theme].class}`}>Save</button></div></form>)}</div></div>); }
-        function ProfileView({ user, onUpdate, theme }) { const [form, setForm] = useState({ username: user.name, phone: user.phone, imageBase64: '' }); const [loading, setLoading] = useState(false); const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); }; const save = async () => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) }); onUpdate({ ...user, name: form.username, phone: form.phone }); setLoading(false); alert("Updated!"); }; return (<div className="animate-fade space-y-8 p-2"><div className="flex flex-col items-center"><label className="relative cursor-pointer"><Avatar imageId={user.imageId} name={user.name} size="lg" theme={theme} /><div className={`absolute bottom-0 right-0 rounded-full p-1 text-white ${THEMES[theme].class}`}><i data-lucide="camera" className="w-4 h-4"></i></div><input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label></div><input className="input-field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} placeholder="Name" /><input className="input-field" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} placeholder="Phone" /><button onClick={save} disabled={loading} className={`btn-primary shadow-lg ${THEMES[theme].class}`}>Update</button></div>); }
-        function Auth({ onLogin }) { const [view, setView] = useState('login'); const [form, setForm] = useState({ email: '', password: '', username: '', phone: '' }); const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(null); const submit = async (e) => { e.preventDefault(); setLoading(true); setMsg(null); try { const url = view === 'login' ? `${API_URL}?action=login&email=${form.email}&password=${form.password}` : API_URL; const opts = view === 'login' ? {} : { method: 'POST', body: JSON.stringify({ action: view, ...form }) }; const res = await fetch(url, opts); const json = await res.json(); if(json.success) { if(view === 'login') onLogin(json.user); else { setMsg({type:'s', text:'Success! Login now.'}); setView('login'); } } else setMsg({type:'e', text: json.error}); } catch(e) { setMsg({type:'e', text: "Error"}); } setLoading(false); }; return (<div className="h-full flex items-center justify-center p-6 bg-slate-100 dark:bg-slate-900"><div className="w-full max-w-sm bg-white dark:bg-slate-950 p-8 rounded-[2rem] shadow-2xl animate-up"><h1 className="text-3xl font-bold text-center mb-2">FinanceMax</h1>{msg && <div className={`p-3 rounded-xl text-center text-sm mb-4 font-bold ${msg.type==='e'?'bg-red-50 text-red-500':'bg-emerald-50 text-emerald-600'}`}>{msg.text}</div>}<form onSubmit={submit} className="space-y-4 mt-6">{view==='signup' && (<><input className="input-field" placeholder="Username" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} required /><input className="input-field" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} /></>)}<input className="input-field" placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} required /><input type="password" className="input-field" placeholder="Password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} required /><button disabled={loading} className="btn-primary bg-indigo-600 shadow-xl">{loading ? '...' : (view==='login'?'Login':'Sign Up')}</button></form><button onClick={()=>setView(view==='login'?'signup':'login')} className="w-full mt-6 text-sm text-slate-400">{view==='login'?'Create Account':'Back to Login'}</button></div></div>); }
+        function PersonModal({ user, onClose, theme }) { const [mode, setMode] = useState('search'); const [query, setQuery] = useState(''); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false); const [manualForm, setManualForm] = useState({ name: '', phone: '', imageBase64: '' }); const handleSearch = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch(`${API_URL}?action=searchUsers&userId=${user.id}&query=${query}`); const json = await res.json(); if(json.success) setResults(json.results); } catch(e) {} setLoading(false); }; const connectUser = async (targetUser) => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, linkedUserId: targetUser.id, name: targetUser.name }) }); onClose(); }; const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setManualForm({...manualForm, imageBase64: b64})); }; const submitManual = async (e) => { e.preventDefault(); setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addPerson', userId: user.id, ...manualForm }) }); onClose(); }; return (<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"><div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] p-6 animate-up shadow-2xl h-[500px] flex flex-col"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg dark:text-white">{mode==='search'?'Find Friend':'Add Manual Reminder'}</h3><button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button></div>{mode === 'search' ? (<div className="flex-1 flex flex-col"><form onSubmit={handleSearch} className="flex gap-2 mb-4"><input className="input-field py-2" placeholder="Search by name..." value={query} onChange={e=>setQuery(e.target.value)} autoFocus /><button className={`text-white p-3 rounded-xl ${THEMES[theme].class}`}><i data-lucide="search" className="w-5 h-5"></i></button></form><div className="flex-1 overflow-y-auto space-y-2 mb-4">{results.map(r => (<div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl"><div className="flex items-center gap-3"><Avatar imageId={r.imageId} name={r.name} size="sm" theme={theme} /><span className="font-bold text-sm dark:text-white">{r.name}</span></div><button onClick={()=>connectUser(r)} disabled={loading} className={`text-xs px-3 py-1.5 rounded-lg font-bold bg-slate-100 ${THEMES[theme].text}`}>Connect</button></div>))}</div><div className="text-center pt-4 border-t border-slate-100 dark:border-slate-800"><p className="text-xs text-slate-400 mb-2">Can't find them?</p><button onClick={()=>setMode('manual')} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm">Add Manually (No Sync)</button></div></div>) : (<form onSubmit={submitManual} className="flex-1 flex flex-col gap-4"><label className="block w-20 h-20 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-slate-200 transition">{manualForm.imageBase64 ? <img src={manualForm.imageBase64} className="w-full h-full object-cover"/> : <i data-lucide="camera" className="text-slate-400 w-6 h-6"></i>}<input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label><input className="input-field" placeholder="Name" value={manualForm.name} onChange={e=>setManualForm({...manualForm, name:e.target.value})} required /><input className="input-field" placeholder="Phone (Optional)" value={manualForm.phone} onChange={e=>setManualForm({...manualForm, phone:e.target.value})} /><div className="mt-auto flex gap-3"><button type="button" onClick={()=>setMode('search')} className="flex-1 py-3 text-slate-500 font-bold">Back</button><button disabled={loading} className={`flex-1 btn-primary shadow-lg ${THEMES[theme].class}`}>{loading ? '...' : 'Save'}</button></div></form>)}</div></div>); }
+        function ProfileView({ user, onUpdate, theme }) { const [form, setForm] = useState({ username: user.name, phone: user.phone, imageBase64: '' }); const [loading, setLoading] = useState(false); const handleImage = (e) => { const file = e.target.files[0]; if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); }; const save = async () => { setLoading(true); await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) }); onUpdate({ ...user, name: form.username, phone: form.phone }); setLoading(false); alert("Updated!"); }; return (<div className="animate-fade space-y-8 p-2"><div className="flex flex-col items-center"><label className="relative cursor-pointer group"><Avatar imageId={user.imageId} name={user.name} size="lg" theme={theme} /><div className={`absolute bottom-0 right-0 rounded-full p-1 text-white ${THEMES[theme].class}`}><i data-lucide="camera" className="w-4 h-4"></i></div><input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label><p className="mt-4 text-sm text-slate-400 font-bold">{user.email}</p></div><input className="input-field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} placeholder="Name" /><input className="input-field" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} placeholder="Phone" /><button onClick={save} disabled={loading} className={`btn-primary shadow-lg ${THEMES[theme].class}`}>{loading?'...':'Update'}</button></div>); }
+        function Auth({ onLogin }) { const [view, setView] = useState('login'); const [form, setForm] = useState({ email: '', password: '', username: '', phone: '' }); const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(null); const submit = async (e) => { e.preventDefault(); setLoading(true); setMsg(null); try { const url = view === 'login' ? `${API_URL}?action=login&email=${form.email}&password=${form.password}` : API_URL; const opts = view === 'login' ? {} : { method: 'POST', body: JSON.stringify({ action: view, ...form }) }; const res = await fetch(url, opts); const json = await res.json(); if(json.success) { if(view === 'login') onLogin(json.user); else { setMsg({type:'s', text:'Success! Login now.'}); setView('login'); } } else setMsg({type:'e', text: json.error}); } catch(e) { setMsg({type:'e', text: "Connection Error"}); } setLoading(false); }; return (<div className="h-full flex items-center justify-center p-6 bg-slate-100 dark:bg-slate-900"><div className="w-full max-w-sm bg-white dark:bg-slate-950 p-8 rounded-[2rem] shadow-2xl animate-up"><h1 className="text-3xl font-bold text-center mb-2">FinanceMax</h1>{msg && <div className={`p-3 rounded-xl text-center text-sm mb-4 font-bold ${msg.type==='e'?'bg-red-50 text-red-500':'bg-emerald-50 text-emerald-600'}`}>{msg.text}</div>}<form onSubmit={submit} className="space-y-4 mt-6">{view==='signup' && (<><input className="input-field" placeholder="Username" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} required /><input className="input-field" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} /></>)}<input className="input-field" placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} required /><input type="password" className="input-field" placeholder="Password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} required /><button disabled={loading} className="btn-primary bg-indigo-600 shadow-xl shadow-indigo-500/30">{loading ? <div className="loader mx-auto"></div> : (view==='login'?'Login':'Sign Up')}</button></form><button onClick={()=>setView(view==='login'?'signup':'login')} className="w-full mt-6 text-sm text-slate-400 hover:text-indigo-500">{view==='login'?'Create Account':'Back to Login'}</button></div></div>); }
         function App() { const [user, setUser] = useState(null); useEffect(() => { const saved = localStorage.getItem('fm_plat_user'); if(saved) setUser(JSON.parse(saved)); }, []); const handleLogin = (u) => { setUser(u); localStorage.setItem('fm_plat_user', JSON.stringify(u)); }; const handleLogout = () => { setUser(null); localStorage.removeItem('fm_plat_user'); }; return user ? <Dashboard user={user} onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />; }
         const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);
     </script>
