@@ -1443,9 +1443,9 @@
                                 </div>
                                 {stats.peopleStats.filter(p=>p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => {
                                     const displayText = p.net > 0 
-                                        ? `You will get ${formatMoney(p.net)}` 
+                                        ? `You need to pay ${formatMoney(p.net)}` 
                                         : p.net < 0 
-                                            ? `You need to pay ${formatMoney(Math.abs(p.net))}`
+                                            ? `You will get ${formatMoney(Math.abs(p.net))}`
                                             : 'Settled';
                                     
                                     const displayColor = p.net > 0 
