@@ -52,6 +52,16 @@
         .dark .state-confirmed { background-color: #14532d; color: #4ade80; }
         .state-rejected { background-color: #fee2e2; color: #991b1b; border-color: #ef4444; }
         .dark .state-rejected { background-color: #7f1d1d; color: #f87171; }
+
+        /* Responsive modal helper classes */
+        .modal-inner { max-width: calc(100% - 32px); box-sizing: border-box; padding: 1rem; border-radius: 1rem; }
+        @media (min-width: 640px) { .modal-inner { max-width: 28rem; padding: 1.5rem; border-radius: 2rem; } }
+        .wrap-break { word-break: break-word; overflow-wrap: anywhere; }
+        .confirm-buttons { display: flex; gap: 0.75rem; }
+        @media (max-width: 639px) { .confirm-buttons { flex-direction: column; } }
+        /* Make inputs a bit tighter on small screens */
+        .input-field { padding: 0.75rem; }
+        @media (min-width: 640px) { .input-field { padding: 1rem; } }
     </style>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -286,7 +296,8 @@
             const [err, setErr] = useState(false);
             const dims = size==='lg'?'w-24 h-24 text-4xl':size==='sm'?'w-8 h-8 text-xs':'w-12 h-12 text-base';
             const url = imageId ? `https://drive.google.com/thumbnail?id=${imageId}&sz=w400` : null;
-            return <div className={`shrink-0 rounded-full flex items-center justify-center overflow-hidden border-2 ${dims} border-slate-200 dark:border-slate-700 ${(!url || err) && 'bg-slate-100 dark:bg-slate-800'}`} style={{color: THEMES[theme].bg}}>{url && !err ? <img src={url} className="w-full h-full object-cover" onError={()=>setErr(true)}/> : <span className="font-bold">{name?name[0].toUpperCase():'?'}</span>}</div>;
+            const borderColor = (THEMES[theme] && THEMES[theme].bg) || '#cbd5e1';
+            return <div className={`shrink-0 rounded-full flex items-center justify-center overflow-hidden ${dims} ${(!url || err) && 'bg-slate-100 dark:bg-slate-800'}`} style={{color: THEMES[theme] ? THEMES[theme].bg : undefined, borderColor: borderColor, borderStyle: 'solid', borderWidth: '1px'}}>{url && !err ? <img loading="lazy" src={url} className="w-full h-full object-cover" onError={()=>setErr(true)}/> : <span className="font-bold">{name?name[0].toUpperCase():'?'}</span>}</div>;
         }
         function ConfirmDialog({ isOpen, title, msg, onConfirm, onCancel, type='neutral', theme, single=false, confirmLabel='Confirm' }) {
             if(!isOpen) return null;
@@ -296,13 +307,13 @@
             return (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onCancel}></div>
-                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-xs rounded-[2rem] p-6 shadow-2xl border border-slate-100 dark:border-slate-800 animate-up">
+                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-xs modal-inner shadow-2xl border border-slate-100 dark:border-slate-800 animate-up">
                         <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={iconBgStyle}>
                             <i data-lucide={isDanger ? 'alert-triangle' : 'help-circle'} className="w-8 h-8"></i>
                         </div>
                         <h3 className="font-bold text-xl dark:text-white mb-2 text-center">{title}</h3>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 text-center leading-relaxed">{msg}</p>
-                        <div className="flex gap-3">
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 text-center leading-relaxed wrap-break">{msg}</p>
+                        <div className="confirm-buttons stack-on-mobile">
                             {!single && <button onClick={onCancel} className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Cancel</button>}
                             <button onClick={onConfirm} className={`flex-1 py-3.5 rounded-2xl font-bold text-sm text-white shadow-xl active:scale-95 transition-transform ${confirmBtnClass}`}>{confirmLabel}</button>
                         </div>
@@ -312,24 +323,44 @@
         }
         
         // FINANCIAL CORRECTNESS: Transaction State Component
-        function TransactionStateBadge({ status, theme }) {
+        function TransactionStateBadge({ status, theme, iconOnly=false, small=false }) {
+            // Visual mapping (non-destructive)
             const stateConfig = {
-                'Pending': { label: 'Pending', icon: 'clock', class: 'state-pending' },
-                'Approved': { label: 'Approved', icon: 'check-circle', class: 'state-approved' },
-                'Marked as Paid': { label: 'Paid', icon: 'credit-card', class: 'state-paid' },
-                'Confirmed': { label: 'Confirmed', icon: 'shield-check', class: 'state-confirmed' },
-                'Rejected': { label: 'Rejected', icon: 'x-circle', class: 'state-rejected' },
-                'Not Received': { label: 'Not Received', icon: 'alert-circle', class: 'state-rejected' }
+                'Pending': { label: 'Pending', icon: 'clock', bg: 'bg-amber-100', fg: 'text-amber-600' },
+                'Approved': { label: 'Approved', icon: 'check-circle', bg: 'bg-emerald-50', fg: 'text-emerald-600' },
+                'Marked as Paid': { label: 'Paid', icon: 'check-circle', bg: 'bg-emerald-50', fg: 'text-emerald-600' },
+                'Confirmed': { label: 'Confirmed', icon: 'check-circle', bg: 'bg-emerald-50', fg: 'text-emerald-600' },
+                'Rejected': { label: 'Rejected', icon: 'x-circle', bg: 'bg-red-50', fg: 'text-red-600' },
+                'Not Received': { label: 'Not Received', icon: 'alert-circle', bg: 'bg-red-50', fg: 'text-red-600' }
             };
-            
-            const config = stateConfig[status] || { label: status, icon: 'help-circle', class: 'bg-slate-100 text-slate-600' };
-            
+
+            const config = stateConfig[status] || { label: status, icon: 'help-circle', bg: 'bg-slate-100', fg: 'text-slate-600' };
+
+            if (iconOnly) {
+                // Small variant: minimal, no background (keeps layout compact)
+                if (small) {
+                    return (
+                        <span title={config.label} className={`status-icon-small ${config.fg}`} role="img" aria-label={config.label}>
+                            <i data-lucide={config.icon} className="w-3 h-3"></i>
+                        </span>
+                    );
+                }
+
+                // Icon-only compact badge: subtle background and consistent size
+                return (
+                    <span title={config.label} className={`status-icon-inline ${config.bg} ${config.fg}`} role="img" aria-label={config.label}>
+                        <i data-lucide={config.icon} className="w-4 h-4"></i>
+                    </span>
+                );
+            }
+
             return (
-                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${config.class}`}>
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${config.bg} ${config.fg}`}>
                     <i data-lucide={config.icon} className="w-3 h-3"></i>
                     {config.label}
                 </span>
             );
+               
         }
         
         function Dashboard({ user, onLogout }) {
@@ -402,20 +433,51 @@
                 setLoading(false);
             };
 
-            // Centralized mutation helper that always refreshes data & charts after success
-            const mutate = async (body) => {
-                setLoading(true);
+            // Periodic polling: refresh server data (people/transactions) every 30s while the page is visible
+            useEffect(() => {
+                let intervalId = null;
+                const poll = async () => {
+                    if (document.hidden) return;
+                    try { await fetchData(lastFetchParams); } catch(e) { /* ignore */ }
+                };
+                // Kick off a poll shortly after mount
+                const timeout = setTimeout(poll, 1500);
+                intervalId = setInterval(poll, 30000);
+                const onVis = () => { if (!document.hidden) poll(); };
+                document.addEventListener('visibilitychange', onVis);
+                return () => { clearTimeout(timeout); clearInterval(intervalId); document.removeEventListener('visibilitychange', onVis); };
+            }, [lastFetchParams]);
+
+            // Centralized mutation helper: supports skipFetch to avoid blocking re-fetch and UI flicker
+            const mutate = async (body, { skipFetch = false } = {}) => {
                 try {
                     const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
                     const json = await res.json();
-                    // Refresh latest data and derived charts using last applied filters (if any)
-                    await fetchData(lastFetchParams);
+                    if (!skipFetch) {
+                        // Refresh latest data if caller wants canonical state
+                        await fetchData(lastFetchParams);
+                    }
                     return json;
                 } catch (e) {
                     console.error('Mutation error', e);
                     throw e;
-                } finally {
-                    setLoading(false);
+                }
+            };
+
+            // Optimistic mutate helper: apply optimistic UI immediately, then call server; rollback on error
+            const optimisticMutate = async (body, applyOptimistic, rollback) => {
+                try {
+                    applyOptimistic();
+                    const json = await mutate(body, { skipFetch: true });
+                    if (json && json.success === false) {
+                        rollback && rollback();
+                        alert(json.error || 'Error');
+                    }
+                    return json;
+                } catch (e) {
+                    rollback && rollback();
+                    alert('Error: ' + (e?.message || e));
+                    throw e;
                 }
             };
             
@@ -475,13 +537,17 @@
                     status === 'Confirmed' ? 'Approve Transaction?' : 'Reject Transaction?',
                     `This will update your financial records.`,
                     async () => {
-                        setLoading(true);
-                        await mutate({ 
-                            action: 'handleApproval', 
-                            transactionId: t.id, 
-                            status: status,
-                            previousStatus: t.status // For rollback tracking
-                        });
+                        const prevStatus = t.status;
+                        await optimisticMutate({ action: 'handleApproval', transactionId: t.id, status: status, previousStatus: prevStatus },
+                            () => {
+                                // optimistic apply
+                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === t.id ? { ...tr, status } : tr) }));
+                            },
+                            () => {
+                                // rollback
+                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === t.id ? { ...tr, status: prevStatus } : tr) }));
+                            }
+                        );
                     },
                     status === 'Rejected' ? 'danger' : 'neutral'
                 );
@@ -503,12 +569,15 @@
                     status === 'Confirmed' ? 'Confirm Receipt?' : 'Mark as Not Received?',
                     `This will ${status === 'Confirmed' ? 'update balances' : 'return to approved state'}.`,
                     async () => {
-                        setLoading(true);
-                        await mutate({ 
-                            action: 'handlePaymentConfirmation', 
-                            transactionId: t.id, 
-                            status: status 
-                        });
+                        const prevStatus = t.status;
+                        await optimisticMutate({ action: 'handlePaymentConfirmation', transactionId: t.id, status: status },
+                            () => {
+                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === t.id ? { ...tr, status } : tr) }));
+                            },
+                            () => {
+                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === t.id ? { ...tr, status: prevStatus } : tr) }));
+                            }
+                        );
                     },
                     status === 'Not Received' ? 'danger' : 'neutral'
                 );
@@ -985,7 +1054,7 @@
                                             </div>
                                             
                                             {/* Multi-stage action buttons */}
-                                            <div className="flex gap-3">
+                                            <div className="flex flex-col sm:flex-row gap-3">
                                                 {isPending && (
                                                     <>
                                                         <button onClick={()=>handleApproval(t, 'Rejected')} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold border border-red-100 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50">
@@ -1137,12 +1206,14 @@
                                                         </div>
                                                         <div className="min-w-0">
                                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{whoPaidText}</p>
-                                                            <p className="font-bold text-sm dark:text-white truncate">
-                                                                {t.category} 
-                                                                {normalizedCategory !== t.category && <span className="text-[10px] text-slate-500 ml-1">({normalizedCategory})</span>}
-                                                                {!isMine && <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1 rounded ml-1">SYNC</span>}
-                                                                <TransactionStateBadge status={t.status} theme={theme} />
-                                                            </p>
+                                                            <div className="flex items-center gap-2">
+                                                                <TransactionStateBadge status={t.status} theme={theme} iconOnly={true} small={true} />
+                                                                <p className="font-bold text-sm dark:text-white truncate">
+                                                                    {t.category} 
+                                                                    {normalizedCategory !== t.category && <span className="text-[10px] text-slate-500 ml-1">({normalizedCategory})</span>}
+                                                                    {!isMine && <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1 rounded ml-1">SYNC</span>}
+                                                                </p>
+                                                            </div>
                                                             <div className="flex items-center gap-1">
                                                                 <p className="text-xs text-slate-500 font-medium">{t.date.split('T')[0]} • {t.paymentMode}</p>
                                                                 {t.imageId && <i data-lucide="paperclip" className="w-3 h-3 text-indigo-500"></i>}
@@ -1209,7 +1280,16 @@
                                 <div className="px-4"><p className="text-xs font-bold text-slate-400 uppercase mb-3">Settings</p>
                                     <div className="bg-white dark:bg-slate-900 rounded-[1.5rem] p-4 space-y-4">
                                         <div className="flex justify-between items-center"><span className="text-sm font-bold dark:text-white">Monthly Budget</span><input type="number" className="w-24 text-right bg-slate-100 dark:bg-slate-800 rounded-lg px-2 py-1 text-sm outline-none" placeholder="0" value={budget} onChange={e=>{setBudget(e.target.value); localStorage.setItem('fm_budget', e.target.value);}} /></div>
-                                        <div className="flex justify-between items-center"><span className="text-sm font-bold dark:text-white">Theme</span><div className="flex gap-2 items-center"><div className="flex gap-2">{Object.keys(THEMES).map(c=>(<div key={c} onClick={()=>{setTheme(c); localStorage.setItem('fm_theme', c); setAccentColor(THEMES[c].bg);}} className={`w-6 h-6 rounded-full cursor-pointer border-2 ${theme===c?'border-slate-900 dark:border-white':'border-transparent'}`} style={{backgroundColor:THEMES[c].bg}}></div>))}</div><input type="color" value={accentColor} onChange={e=>{setAccentColor(e.target.value); localStorage.setItem('fm_accent', e.target.value);}} className="ml-2 w-8 h-8 p-0 border-0" /></div></div>
+                                        <div className="flex justify-between items-center theme-row"><span className="text-sm font-bold dark:text-white">Theme</span>
+                                            <div className="flex gap-2 items-center min-w-0">
+                                                <div className="theme-swatches flex-1 flex flex-wrap gap-2 min-w-0">
+                                                    {Object.keys(THEMES).map(c => (
+                                                        <button key={c} onClick={()=>{setTheme(c); localStorage.setItem('fm_theme', c); setAccentColor(THEMES[c].bg);}} className={`swatch w-6 h-6 rounded-full cursor-pointer border-2 ${theme===c?'border-slate-900 dark:border-white':'border-transparent'}`} style={{backgroundColor:THEMES[c].bg}} aria-label={`Theme ${c}`} title={c}></button>
+                                                    ))}
+                                                </div>
+                                                <input type="color" value={accentColor} onChange={e=>{setAccentColor(e.target.value); localStorage.setItem('fm_accent', e.target.value);}} className="ml-2 w-8 h-8 p-0 border-0" />
+                                            </div>
+                                        </div>
                                         <button onClick={exportCSV} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-sm flex justify-center gap-2"><i data-lucide="download" className="w-4 h-4"></i> Export Data (CSV)</button>
                                     </div>
                                 </div>
@@ -1529,6 +1609,51 @@
                
                 try {
                     if (mutate) {
+                        // Optimistic update for add/update
+                        if (body.action === 'add') {
+                            const tmpId = 'tmp_' + Date.now();
+                            const tmpItem = { ...form, id: tmpId, userId: user.id, status: body.status || 'Confirmed' };
+                            // insert at top
+                            setData(prev => ({ ...prev, transactions: [tmpItem, ...prev.transactions] }));
+                            onClose();
+                            try {
+                                const json = await mutate(body, { skipFetch: true });
+                                if (json && json.success === false) {
+                                    // remove tmp
+                                    setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== tmpId) }));
+                                    alert(json.error || 'Error saving transaction');
+                                } else {
+                                    // optionally refresh in background
+                                    fetchData(lastFetchParams);
+                                }
+                            } catch (e) {
+                                setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== tmpId) }));
+                                alert('Error saving transaction');
+                            } finally { setLoading(false); }
+                            return;
+                        }
+                        if (body.action === 'update') {
+                            // optimistic update local item
+                            const prevItem = data.transactions.find(x => x.id === body.id);
+                            setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? { ...tr, ...body, amount: body.amount } : tr) }));
+                            onClose();
+                            try {
+                                const json = await mutate(body, { skipFetch: true });
+                                if (json && json.success === false) {
+                                    // rollback
+                                    setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? prevItem : tr) }));
+                                    alert(json.error || 'Error updating transaction');
+                                } else {
+                                    fetchData(lastFetchParams);
+                                }
+                            } catch (e) {
+                                setData(prev => ({ ...prev, transactions: prev.transactions.map(tr => tr.id === body.id ? prevItem : tr) }));
+                                alert('Error updating transaction');
+                            } finally { setLoading(false); }
+                            return;
+                        }
+
+                        // Fallback: default mutate behavior
                         const json = await mutate(body);
                         if (json && json.success === false) { alert(json.error || 'Error saving transaction'); setLoading(false); return; }
                     } else {
@@ -1543,16 +1668,28 @@
            
             const handleDelete = async () => { 
                 if(!confirm("Delete this transaction? This will revert all financial effects.")) return; 
-                setLoading(true); 
+                // Optimistic local delete
+                const backup = data.transactions;
+                setData(prev => ({ ...prev, transactions: prev.transactions.filter(tr => tr.id !== editItem.id) }));
+                onClose();
                 try {
                     if (mutate) {
-                        const json = await mutate({ action: 'delete', id: editItem.id, userId: user.id, revertBalances: true });
-                        if (json && json.success === false) { alert(json.error || 'Error deleting transaction'); setLoading(false); return; }
+                        const json = await mutate({ action: 'delete', id: editItem.id, userId: user.id, revertBalances: true }, { skipFetch: true });
+                        if (json && json.success === false) {
+                            // rollback
+                            setData(prev => ({ ...prev, transactions: backup }));
+                            alert(json.error || 'Error deleting transaction');
+                        } else {
+                            fetchData(lastFetchParams);
+                        }
                     } else {
                         await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', id: editItem.id, userId: user.id, revertBalances: true }) });
+                        fetchData(lastFetchParams);
                     }
-                    onClose();
-                } catch (e) { alert('Error'); } finally { setLoading(false); }
+                } catch (e) {
+                    setData(prev => ({ ...prev, transactions: backup }));
+                    alert('Error');
+                }
             };
             
             // FIXED: Render split validation status
@@ -1608,7 +1745,7 @@
             
             return (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-sm p-2 sm:items-center">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-up max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-md modal-inner shadow-2xl animate-up max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-xl dark:text-white">{editItem && editItem.id ? 'Edit Entry' : 'New Entry'}</h3>
                             <button onClick={onClose}><i data-lucide="x" className="w-5 h-5 text-slate-400"></i></button>
@@ -1929,13 +2066,34 @@
             if(file) compressImage(file).then(b64 => setForm({...form, imageBase64: b64})); 
         }; 
         
-        const save = async () => { 
-            setLoading(true); 
-            await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) }); 
-            onUpdate({ ...user, name: form.username, phone: form.phone }); 
-            setLoading(false); 
-            alert("Updated!"); 
-        }; 
+        const save = async () => {
+            setLoading(true);
+            try {
+                if (mutate) {
+                    const json = await mutate({ action: 'updateProfile', userId: user.id, ...form });
+                    if (json && json.success) {
+                        const newUser = { ...user, name: form.username, phone: form.phone };
+                        if (json.imageId) newUser.imageId = json.imageId;
+                        onUpdate(newUser);
+                        alert('Updated!');
+                    } else {
+                        alert(json?.error || 'Error');
+                    }
+                } else {
+                    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateProfile', userId: user.id, ...form }) });
+                    const json = await res.json();
+                    if (json && json.success) {
+                        const newUser = { ...user, name: form.username, phone: form.phone };
+                        if (json.imageId) newUser.imageId = json.imageId;
+                        onUpdate(newUser);
+                        alert('Updated!');
+                    } else {
+                        alert(json?.error || 'Error');
+                    }
+                }
+            } catch (e) { alert('Error'); }
+            setLoading(false);
+        };
         
         return (
             <div className="animate-fade space-y-8 p-2">
@@ -2005,7 +2163,37 @@
         ); 
     }
     
-    function App() { 
+// Small responsive CSS helpers for modal and status icons
+        const globalResponsiveStyles = `
+            .modal-inner { border-radius: 1.25rem; padding: 1.25rem; }
+            .confirm-buttons { display: flex; gap: .75rem; }
+            .confirm-buttons.stack-on-mobile { display: flex; gap: .75rem; }
+            @media (max-width: 520px) {
+                .modal-inner { padding: .9rem; border-radius: 1rem; max-width: 94%; }
+                .confirm-buttons.stack-on-mobile { flex-direction: column; }
+            }
+            .wrap-break { white-space: pre-wrap; word-break: break-word; }
+            .status-icon-inline { display:inline-flex; width:1.5rem; height:1.5rem; min-width:1.5rem; align-items:center; justify-content:center; border-radius:9999px; }
+            .status-icon-small { display:inline-flex; width:1rem; height:1rem; min-width:1rem; align-items:center; justify-content:center; border-radius:9999px; }
+
+            /* Hide horizontal scrollbar visually but keep scrolling functional */
+            .scroll-x { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; padding-bottom: 6px; }
+            .scroll-x::-webkit-scrollbar { display: none; height: 0; }
+            .scroll-x > * { display: inline-flex; }
+
+            .theme-swatches { display:flex; gap:.5rem; align-items:center; }
+            .swatch { box-sizing: border-box; flex-shrink:0; }
+            .theme-row { gap: .75rem; }
+            @media (max-width:520px) { .theme-swatches { gap:.5rem; } }
+        `;
+        if (!document.getElementById('fm-responsive-styles')) {
+            const s = document.createElement('style');
+            s.id = 'fm-responsive-styles';
+            s.innerText = globalResponsiveStyles;
+            document.head.appendChild(s);
+        }
+
+        function App() { 
         const [user, setUser] = useState(null); 
         useEffect(() => { 
             const saved = localStorage.getItem('fm_plat_user'); 
